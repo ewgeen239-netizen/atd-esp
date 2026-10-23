@@ -1,0 +1,21 @@
+# Render Blueprint: New > Blueprint > select this repo.
+services:
+  - type: web
+    name: autodoc-barcode-scanner
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter            # a persistent disk requires a paid plan
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/scanner.db
+      - key: EXTERNAL_PROVIDERS
+        value: mock
+      - key: BASIC_AUTH_USER
+        sync: false
+      - key: BASIC_AUTH_PASS
+        sync: false

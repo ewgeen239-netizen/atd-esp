@@ -1,0 +1,16 @@
+{
+  "name": "autodoc-barcode-scanner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Warehouse barcode (EAN/GTIN) scanner for auto parts with optional AutoDoc.pl lookup",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "postinstall": "npm --prefix backend install",
+    "start": "npm --prefix backend start",
+    "dev": "npm --prefix backend run dev",
+    "test": "npm --prefix backend test",
+    "build:css": "npm --prefix backend run build:css",
+    "import": "npm --prefix backend run import --",
+    "probe": "npm --prefix backend run probe --"
+  }
+}

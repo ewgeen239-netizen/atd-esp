@@ -1,0 +1,153 @@
+[
+  {
+    "ean": "2009999010012",
+    "article_no": "DEMO-OF-1001",
+    "brand": "DEMO Filters",
+    "name": "Filtr oleju (DEMO)",
+    "oem_numbers": [
+      "11 42 7 953 129",
+      "HU 816 x"
+    ],
+    "price": 34.9,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010029",
+    "article_no": "DEMO-AF-2002",
+    "brand": "DEMO Filters",
+    "name": "Filtr powietrza (DEMO)",
+    "oem_numbers": [
+      "1444.TK",
+      "13 71 7 532 754"
+    ],
+    "price": 52.5,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010036",
+    "article_no": "DEMO-BP-3003",
+    "brand": "DEMO Brakes",
+    "name": "Klocki hamulcowe, przód (DEMO)",
+    "oem_numbers": [
+      "0986494294",
+      "8K0 698 151"
+    ],
+    "price": 129,
+    "currency": "PLN",
+    "availability": "Мало на складе",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010043",
+    "article_no": "DEMO-BD-3004",
+    "brand": "DEMO Brakes",
+    "name": "Tarcza hamulcowa, 312 mm (DEMO)",
+    "oem_numbers": [
+      "8K0 615 301"
+    ],
+    "price": 189.99,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010050",
+    "article_no": "DEMO-SP-4005",
+    "brand": "DEMO Ignition",
+    "name": "Świeca zapłonowa (DEMO)",
+    "oem_numbers": [
+      "101 905 601 B"
+    ],
+    "price": 24,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010067",
+    "article_no": "DEMO-WB-5006",
+    "brand": "DEMO Wipers",
+    "name": "Pióro wycieraczki 600 mm (DEMO)",
+    "oem_numbers": [],
+    "price": 44.9,
+    "currency": "PLN",
+    "availability": "Нет в наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010074",
+    "article_no": "DEMO-BT-6007",
+    "brand": "DEMO Power",
+    "name": "Akumulator 74Ah 680A (DEMO)",
+    "oem_numbers": [
+      "000 915 105 DE"
+    ],
+    "price": 459,
+    "currency": "PLN",
+    "availability": "Под заказ",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010081",
+    "article_no": "DEMO-SH-7008",
+    "brand": "DEMO Suspension",
+    "name": "Amortyzator przedni (DEMO)",
+    "oem_numbers": [
+      "4F0 413 031 AE"
+    ],
+    "price": 310.5,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010098",
+    "article_no": "DEMO-TB-8009",
+    "brand": "DEMO Engine",
+    "name": "Zestaw paska rozrządu (DEMO)",
+    "oem_numbers": [
+      "06H 198 119 C"
+    ],
+    "price": 399,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  },
+  {
+    "ean": "2009999010104",
+    "article_no": "DEMO-CF-9010",
+    "brand": "DEMO Filters",
+    "name": "Filtr kabinowy węglowy (DEMO)",
+    "oem_numbers": [
+      "64 31 9 313 519"
+    ],
+    "price": 61.2,
+    "currency": "PLN",
+    "availability": "В наличии",
+    "image_url": null,
+    "product_url": null,
+    "notes": "Демо-данные, не реальный товар"
+  }
+]

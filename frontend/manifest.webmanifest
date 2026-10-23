@@ -1,0 +1,10 @@
+{
+  "name": "Сканер запчастей",
+  "short_name": "Сканер",
+  "description": "Сканирование EAN/артикулов автозапчастей, история и штрих-коды",
+  "start_url": "/#scan",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

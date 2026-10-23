@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .card { @apply rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition active:scale-[.98] disabled:opacity-40 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-accent text-zinc-950 hover:bg-amber-400; }
+  .btn-ghost { @apply btn border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800; }
+  .btn-danger { @apply btn border border-red-900 bg-red-950/50 text-red-300 hover:bg-red-900/50; }
+  .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
+  .input { @apply w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-100 placeholder-zinc-500 outline-none focus:border-accent focus:ring-1 focus:ring-accent; }
+  .label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-400; }
+  .badge { @apply inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide; }
+  .chip { @apply inline-flex items-center rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 font-mono text-xs text-zinc-300; }
+  .nav-btn { @apply flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] text-zinc-400; }
+  .nav-btn[aria-current='page'] { @apply text-accent; }
+  .kv dt { @apply text-[11px] uppercase tracking-wide text-zinc-500; }
+  .kv dd { @apply mb-2 break-words text-sm text-zinc-100; }
+}
+
+/* html5-qrcode renders its own video; make it fill our frame */
+#reader video { object-fit: cover; border-radius: 1rem; }
+#reader { min-height: 220px; }
+
+@media print {
+  body * { visibility: hidden !important; }
+  #print-area, #print-area * { visibility: visible !important; }
+  #print-area { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; background: #fff !important; padding: 10mm; }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "autodoc-barcode-scanner-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Barcode (EAN/GTIN) scanner backend for auto parts: local catalog, optional AutoDoc.pl lookup, scan history.",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
+    "build:css": "tailwindcss -c ../frontend/tailwind.config.cjs -i ../frontend/css/tailwind.src.css -o ../frontend/css/tailwind.css --minify",
+    "import": "node --disable-warning=ExperimentalWarning scripts/import-csv.js",
+    "probe": "node --disable-warning=ExperimentalWarning scripts/probe-autodoc.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "html5-qrcode": "2.3.8",
+    "jsbarcode": "3.11.6"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

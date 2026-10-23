@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#09090b">
+  <meta name="color-scheme" content="dark">
+  <title>Сканер запчастей</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/tailwind.css">
+</head>
+<body class="min-h-screen bg-zinc-950 text-zinc-100 antialiased">
+  <header class="sticky top-0 z-20 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
+    <div class="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+      <div class="flex items-center gap-2">
+        <img src="/icons/icon.svg" alt="" class="h-7 w-7">
+        <div>
+          <h1 class="text-sm font-semibold leading-tight">Сканер запчастей</h1>
+          <p class="text-[11px] leading-tight text-zinc-500">EAN · артикул · OEM</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-xs text-zinc-400">
+        <span id="kpi-today" title="Сканов за сегодня">—</span>
+        <span id="status" class="flex items-center gap-1.5" title="Источники поиска">
+          <span id="status-dot" class="h-2 w-2 rounded-full bg-zinc-600"></span>
+          <span id="status-text">…</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-2xl px-4 pb-28 pt-4">
+    <!-- ===== Scan ===== -->
+    <section id="view-scan" data-view="scan" class="space-y-4">
+      <div class="card space-y-3 p-3">
+        <div id="reader-wrap" class="relative hidden overflow-hidden rounded-2xl bg-black">
+          <div id="reader"></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="cam-toggle" class="btn-primary flex-1" type="button">📷 Включить камеру</button>
+          <button id="cam-switch" class="btn-ghost hidden" type="button" title="Сменить камеру">🔄</button>
+          <button id="cam-torch" class="btn-ghost hidden" type="button" title="Фонарик">🔦</button>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-zinc-400">
+          <input id="cam-continuous" type="checkbox" class="h-4 w-4 accent-amber-500" checked>
+          Непрерывное сканирование (повтор одного кода игнорируется 3 с)
+        </label>
+        <p id="cam-error" class="hidden rounded-lg bg-red-950/60 p-2 text-xs text-red-300"></p>
+      </div>
+
+      <form id="manual-form" class="card flex gap-2 p-3" autocomplete="off">
+        <input id="manual-code" class="input font-mono" inputmode="text" enterkeyhint="search"
+               placeholder="EAN или артикул / OEM" maxlength="40" aria-label="EAN или артикул">
+        <button class="btn-primary shrink-0" type="submit">Найти</button>
+      </form>
+      <p class="-mt-2 px-1 text-[11px] text-zinc-500">USB/Bluetooth-сканер работает как клавиатура: просто сканируйте, Enter отправит код.</p>
+
+      <div id="result" aria-live="polite"></div>
+
+      <div id="recent-wrap" class="hidden">
+        <h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Последние в этой сессии</h2>
+        <ul id="recent" class="space-y-1.5"></ul>
+      </div>
+    </section>
+
+    <!-- ===== History ===== -->
+    <section id="view-history" data-view="history" class="hidden space-y-4">
+      <div class="card space-y-3">
+        <div class="flex flex-wrap gap-1.5" id="hist-presets">
+          <button class="btn-ghost btn-sm" data-preset="shift">Смена 12 ч</button>
+          <button class="btn-ghost btn-sm" data-preset="today">Сегодня</button>
+          <button class="btn-ghost btn-sm" data-preset="yesterday">Вчера</button>
+          <button class="btn-ghost btn-sm" data-preset="week">7 дней</button>
+          <button class="btn-ghost btn-sm" data-preset="all">Всё</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="label" for="hist-from">С даты</label><input id="hist-from" type="date" class="input"></div>
+          <div><label class="label" for="hist-to">По дату</label><input id="hist-to" type="date" class="input"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <select id="hist-found" class="input" aria-label="Результат">
+            <option value="">Все результаты</option>
+            <option value="1">Найдено</option>
+            <option value="0">Не найдено</option>
+            <option value="invalid">Ошибки EAN</option>
+          </select>
+          <input id="hist-q" class="input" placeholder="Поиск: код, бренд…" aria-label="Поиск по истории">
+        </div>
+      </div>
+
+      <div id="hist-stats" class="grid grid-cols-4 gap-2 text-center"></div>
+
+      <div class="flex gap-2">
+        <a id="hist-export" class="btn-primary flex-1" href="#" download>⬇ Экспорт CSV</a>
+        <button id="hist-clear" class="btn-danger" type="button">Очистить</button>
+      </div>
+
+      <ul id="hist-list" class="space-y-1.5"></ul>
+      <button id="hist-more" class="btn-ghost hidden w-full" type="button">Показать ещё</button>
+    </section>
+
+    <!-- ===== Barcode ===== -->
+    <section id="view-barcode" data-view="barcode" class="hidden space-y-4">
+      <form id="bc-form" class="card space-y-3" autocomplete="off">
+        <div>
+          <label class="label" for="bc-value">Значение</label>
+          <input id="bc-value" class="input font-mono" placeholder="12 или 13 цифр для EAN-13" maxlength="80">
+          <p id="bc-hint" class="mt-1 min-h-[1rem] text-xs text-zinc-500"></p>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="label" for="bc-format">Формат</label>
+            <select id="bc-format" class="input">
+              <option value="EAN13">EAN-13</option>
+              <option value="EAN8">EAN-8</option>
+              <option value="CODE128">Code 128</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="bc-caption">Подпись</label>
+            <input id="bc-caption" class="input" placeholder="напр. артикул" maxlength="60">
+          </div>
+        </div>
+      </form>
+      <div class="card flex min-h-[180px] items-center justify-center bg-white p-4">
+        <div id="print-area" class="flex flex-col items-center">
+          <svg id="bc-svg" role="img" aria-label="Штрих-код"></svg>
+          <p id="bc-caption-out" class="mt-1 font-mono text-sm text-black"></p>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <button id="bc-svg-dl" class="btn-ghost" type="button">SVG</button>
+        <button id="bc-png-dl" class="btn-ghost" type="button">PNG</button>
+        <button id="bc-print" class="btn-ghost" type="button">Печать</button>
+      </div>
+    </section>
+
+    <!-- ===== Catalog ===== -->
+    <section id="view-catalog" data-view="catalog" class="hidden space-y-4">
+      <div class="card space-y-3">
+        <input id="cat-q" class="input" placeholder="Поиск по названию, EAN, артикулу, OEM" aria-label="Поиск по каталогу">
+        <div class="grid grid-cols-3 gap-2">
+          <button id="cat-add" class="btn-primary" type="button">+ Товар</button>
+          <label class="btn-ghost cursor-pointer">Импорт CSV<input id="cat-import" type="file" accept=".csv,text/csv" class="hidden"></label>
+          <a class="btn-ghost" href="/api/products/export.csv" download>Экспорт</a>
+        </div>
+        <p class="text-[11px] text-zinc-500">
+          Колонки CSV: <span class="font-mono">ean;article_no;brand;name;oem_numbers;price;currency;availability;product_url;notes</span>
+          (подходят и заголовки PL/RU: nazwa, cena, название, артикул…). Разделитель «;» или «,».
+        </p>
+        <p id="cat-import-result" class="hidden text-xs"></p>
+      </div>
+      <p id="cat-total" class="px-1 text-xs text-zinc-500"></p>
+      <ul id="cat-list" class="space-y-1.5"></ul>
+      <button id="cat-more" class="btn-ghost hidden w-full" type="button">Показать ещё</button>
+    </section>
+  </main>
+
+  <!-- Product form dialog -->
+  <dialog id="product-dialog" class="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-900 p-0 text-zinc-100 backdrop:bg-black/70">
+    <form id="product-form" method="dialog" class="space-y-3 p-4" autocomplete="off">
+      <div class="flex items-center justify-between">
+        <h2 id="product-dialog-title" class="text-base font-semibold">Товар</h2>
+        <button value="cancel" class="btn-ghost btn-sm" type="button" data-close>✕</button>
+      </div>
+      <div><label class="label" for="pf-name">Название *</label><input id="pf-name" name="name" class="input" required maxlength="300"></div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><label class="label" for="pf-brand">Бренд</label><input id="pf-brand" name="brand" class="input" maxlength="80"></div>
+        <div><label class="label" for="pf-article">Артикул</label><input id="pf-article" name="article_no" class="input font-mono" maxlength="40"></div>
+      </div>
+      <div>
+        <label class="label" for="pf-ean">EAN</label>
+        <input id="pf-ean" name="ean" class="input font-mono" inputmode="numeric" maxlength="14">
+        <p id="pf-ean-hint" class="mt-1 min-h-[1rem] text-xs text-zinc-500"></p>
+      </div>
+      <div><label class="label" for="pf-oem">OEM номера (через запятую)</label><textarea id="pf-oem" name="oem_numbers" rows="2" class="input font-mono"></textarea></div>
+      <div class="grid grid-cols-3 gap-2">
+        <div class="col-span-1"><label class="label" for="pf-price">Цена</label><input id="pf-price" name="price" class="input" inputmode="decimal"></div>
+        <div class="col-span-1"><label class="label" for="pf-currency">Валюта</label><input id="pf-currency" name="currency" class="input uppercase" maxlength="3" value="PLN"></div>
+        <div class="col-span-1"><label class="label" for="pf-availability">Наличие</label><input id="pf-availability" name="availability" class="input" maxlength="60"></div>
+      </div>
+      <div><label class="label" for="pf-url">Ссылка на autodoc.pl</label><input id="pf-url" name="product_url" type="url" class="input" placeholder="https://www.autodoc.pl/brand/123456"></div>
+      <div><label class="label" for="pf-image">Изображение (URL)</label><input id="pf-image" name="image_url" type="url" class="input"></div>
+      <div><label class="label" for="pf-notes">Заметки</label><textarea id="pf-notes" name="notes" rows="2" class="input"></textarea></div>
+      <p id="pf-error" class="hidden rounded-lg bg-red-950/60 p-2 text-xs text-red-300"></p>
+      <div class="flex gap-2 pt-1">
+        <button class="btn-primary flex-1" type="submit">Сохранить</button>
+        <button class="btn-ghost" type="button" data-close>Отмена</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="pointer-events-none fixed inset-x-0 top-16 z-50 flex flex-col items-center gap-2 px-4"></div>
+
+  <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+    <div class="mx-auto flex max-w-2xl">
+      <a href="#scan" class="nav-btn" data-nav="scan"><span class="text-lg">▦</span>Скан</a>
+      <a href="#history" class="nav-btn" data-nav="history"><span class="text-lg">☰</span>История</a>
+      <a href="#barcode" class="nav-btn" data-nav="barcode"><span class="text-lg">║</span>Штрих-код</a>
+      <a href="#catalog" class="nav-btn" data-nav="catalog"><span class="text-lg">▤</span>Каталог</a>
+    </div>
+  </nav>
+
+  <script src="/vendor/html5-qrcode.min.js"></script>
+  <script src="/vendor/JsBarcode.all.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
