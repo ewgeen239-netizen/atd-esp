@@ -56,6 +56,7 @@ export function createApp(config, deps = {}) {
   // Frontend + vendored browser libraries (no CDN: works on a closed warehouse network).
   const nm = path.join(BACKEND_DIR, 'node_modules');
   app.get('/vendor/html5-qrcode.min.js', (_req, res) => res.sendFile(path.join(nm, 'html5-qrcode', 'html5-qrcode.min.js')));
+  app.get('/vendor/zxing.min.js', (_req, res) => res.sendFile(path.join(nm, '@zxing', 'library', 'umd', 'index.min.js')));
   app.get('/vendor/JsBarcode.all.min.js', (_req, res) => res.sendFile(path.join(nm, 'jsbarcode', 'dist', 'JsBarcode.all.min.js')));
   app.get('/lib/ean.js', (_req, res) => res.type('text/javascript').sendFile(path.join(BACKEND_DIR, 'src', 'lib', 'ean.js')));
   app.use(express.static(config.frontendDir, { maxAge: '1h', index: 'index.html' }));

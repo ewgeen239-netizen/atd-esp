@@ -39,8 +39,19 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button id="cam-toggle" class="btn-primary flex-1" type="button">📷 Включить камеру</button>
+          <label id="photo-btn" class="btn-ghost cursor-pointer" title="Сфотографировать или выбрать фото со штрих-кодом">
+            🖼 Фото<input id="photo-input" type="file" accept="image/*" class="hidden">
+          </label>
           <button id="cam-switch" class="btn-ghost hidden" type="button" title="Сменить камеру">🔄</button>
           <button id="cam-torch" class="btn-ghost hidden" type="button" title="Фонарик">🔦</button>
+        </div>
+        <div id="photo-panel" class="hidden flex gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 p-2">
+          <img id="photo-preview" alt="Фото для распознавания" class="h-20 w-20 shrink-0 rounded-lg bg-zinc-800 object-cover">
+          <div class="min-w-0 flex-1 space-y-2">
+            <p id="photo-status" class="text-sm text-zinc-300"></p>
+            <div id="photo-codes" class="flex flex-wrap gap-1.5"></div>
+          </div>
+          <button id="photo-close" class="self-start px-1 text-zinc-500 hover:text-zinc-200" type="button" aria-label="Закрыть">✕</button>
         </div>
         <label class="flex items-center gap-2 text-xs text-zinc-400">
           <input id="cam-continuous" type="checkbox" class="h-4 w-4 accent-amber-500" checked>
@@ -54,7 +65,8 @@
                placeholder="EAN или артикул / OEM" maxlength="40" aria-label="EAN или артикул">
         <button class="btn-primary shrink-0" type="submit">Найти</button>
       </form>
-      <p class="-mt-2 px-1 text-[11px] text-zinc-500">USB/Bluetooth-сканер работает как клавиатура: просто сканируйте, Enter отправит код.</p>
+      <p class="-mt-2 px-1 text-[11px] text-zinc-500">USB/Bluetooth-сканер работает как клавиатура: просто сканируйте, Enter отправит код.
+        Плохо читается вживую — нажмите «Фото» (или вставьте/перетащите картинку на компьютере).</p>
 
       <div id="result" aria-live="polite"></div>
 

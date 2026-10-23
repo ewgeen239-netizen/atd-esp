@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { readBarcodesFromPhoto } from '../photo.js';
 import { openProductForm } from '../product-form.js';
 import { renderLookupResult } from '../product-card.js';
 import { CameraScanner, listenKeyboardWedge } from '../scanner.js';
@@ -65,12 +66,99 @@ export function initScanView(appState) {
 
   listenKeyboardWedge((code) => lookup(code), () => state.view === 'scan');
 
+  initPhotoReading(stopCamera);
+
   state.stopCamera = stopCamera;
   // Release the camera when leaving the tab or hiding the app (battery, other apps).
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && scanner.running) stopCamera();
   });
   state.scanner = scanner;
+}
+
+let photoBusy = false;
+let previewUrl = null;
+
+function initPhotoReading(stopCamera) {
+  const input = $('#photo-input');
+  input.addEventListener('change', () => {
+    const file = input.files[0];
+    input.value = ''; // allow choosing the same file again
+    if (file) readPhoto(file, stopCamera);
+  });
+  $('#photo-close').addEventListener('click', closePhotoPanel);
+
+  // Desktop: paste a screenshot (Ctrl+V) or drop an image file onto the scan tab.
+  document.addEventListener('paste', (e) => {
+    if (state.view !== 'scan') return;
+    const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
+    if (file) {
+      e.preventDefault();
+      readPhoto(file, stopCamera);
+    }
+  });
+  const zone = $('#view-scan');
+  zone.addEventListener('dragover', (e) => {
+    if ([...(e.dataTransfer?.items || [])].some((i) => i.kind === 'file')) e.preventDefault();
+  });
+  zone.addEventListener('drop', (e) => {
+    const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
+    if (file) {
+      e.preventDefault();
+      readPhoto(file, stopCamera);
+    }
+  });
+}
+
+function closePhotoPanel() {
+  $('#photo-panel').classList.add('hidden');
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = null;
+}
+
+function photoStatus(text, tone = 'info') {
+  const el = $('#photo-status');
+  el.textContent = text;
+  el.className = `text-sm ${{ info: 'text-zinc-300', ok: 'text-emerald-400', bad: 'text-red-300' }[tone]}`;
+}
+
+async function readPhoto(file, stopCamera) {
+  if (photoBusy) return;
+  photoBusy = true;
+  // The live camera and the photo picker compete for the same sensor on phones.
+  if (state.scanner?.running) await stopCamera();
+  closePhotoPanel();
+  previewUrl = URL.createObjectURL(file);
+  $('#photo-preview').src = previewUrl;
+  $('#photo-codes').replaceChildren();
+  $('#photo-panel').classList.remove('hidden');
+  $('#photo-btn').classList.add('opacity-50', 'pointer-events-none');
+  photoStatus('Распознаю…');
+  try {
+    const { codes, ms } = await readBarcodesFromPhoto(file, (msg) => photoStatus(msg));
+    if (!codes.length) {
+      feedback('error');
+      photoStatus('Штрих-код не найден. Снимите ближе и ровнее, без бликов, код целиком в кадре — или введите вручную.', 'bad');
+      return;
+    }
+    if (codes.length === 1) {
+      photoStatus(`Считан за ${(ms / 1000).toFixed(1)} с: ${codes[0]}`, 'ok');
+      await lookup(codes[0]);
+      return;
+    }
+    // Several labels in one picture: let the picker choose.
+    feedback('ok');
+    photoStatus(`Найдено кодов: ${codes.length}. Выберите нужный:`, 'ok');
+    $('#photo-codes').replaceChildren(
+      ...codes.map((c) => h('button', { class: 'btn-ghost btn-sm font-mono', type: 'button', onclick: () => lookup(c) }, c)),
+    );
+  } catch (err) {
+    feedback('error');
+    photoStatus(err.message || String(err), 'bad');
+  } finally {
+    photoBusy = false;
+    $('#photo-btn').classList.remove('opacity-50', 'pointer-events-none');
+  }
 }
 
 export async function lookup(code, opts = {}) {

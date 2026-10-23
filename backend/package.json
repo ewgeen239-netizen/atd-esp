@@ -17,6 +17,7 @@
     "probe": "node --disable-warning=ExperimentalWarning scripts/probe-autodoc.js"
   },
   "dependencies": {
+    "@zxing/library": "0.21.3",
     "express": "^5.1.0",
     "html5-qrcode": "2.3.8",
     "jsbarcode": "3.11.6"
