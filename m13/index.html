@@ -1,0 +1,788 @@
+<!doctype html>
+<!--
+  M13 · Баркод AutoDoc: какой штрих-код нужен системе
+  ───────────────────────────────────────────────────
+  Как пользоваться:
+  1. «СКАНЕР»: наведите камеру на этикетку и медленно проведите по всем штрих-кодам, собираются все.
+     «ФОТО»: сфотографируйте этикетку целиком, найдутся все штрих-коды и текст (OCR полей ArticleId / ArticleNr).
+     «КАДР»: при включённом сканере анализирует текущий кадр так же, как фото.
+     Поле ввода сверху: ручной ввод или ручной сканер (Enter). Можно ввести и текст: "ArticleId 224800".
+  2. Код выбирается по правилам M13:
+     ArticleId → ArticleNr + Code-128 → первые 6 цифр длинного кода → EAN производителя (запасной) → выбор вручную.
+  3. Проверьте выбранный код (его можно исправить в поле «Код для печати») и покажите большой
+     Code-128 сканеру: кнопка «НА ВЕСЬ ЭКРАН».
+  «НОВЫЙ ТОВАР» очищает всё перед следующей этикеткой.
+  При первом запуске нужен интернет: библиотеки и OCR-модель (~5 МБ) грузятся с CDN, потом кэшируются браузером.
+  Камера работает только по https:// (или localhost). Кнопка «ФОТО» работает везде.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>M13 · Баркод AutoDoc</title>
+<style>
+  :root {
+    --bg: #000; --panel: #111; --line: #2a2a2a; --text: #fff; --muted: #a3a3a3;
+    --accent: #ffd400; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444; --info: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 720px; margin: 0 auto; padding: 12px 12px 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+  h1 small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 8px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 0; min-width: 0; }
+  button, .btn { appearance: none; border: 2px solid var(--line); background: #1c1c1c; color: var(--text);
+    border-radius: 14px; min-height: 60px; padding: 10px 14px; font: 700 18px/1.1 inherit; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-align: center;
+    touch-action: manipulation; user-select: none; }
+  button:active, .btn:active { transform: scale(.98); }
+  button:disabled { opacity: .4; }
+  .primary { background: var(--accent); border-color: var(--accent); color: #000; }
+  .danger { background: #2a0a0a; border-color: #7f1d1d; color: #fecaca; }
+  .small { min-height: 44px; font-size: 15px; border-radius: 12px; padding: 6px 12px; }
+  input, textarea { width: 100%; background: #000; color: var(--text); border: 2px solid #3a3a3a; border-radius: 14px;
+    padding: 12px 14px; font: 600 20px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { font-size: 15px; font-weight: 400; min-height: 110px; resize: vertical; }
+  .hidden { display: none !important; }
+  #reader { width: 100%; border-radius: 14px; overflow: hidden; background: #050505; margin-top: 10px; }
+  #reader video { width: 100% !important; height: auto !important; display: block; object-fit: cover; }
+  #status { min-height: 24px; margin-top: 8px; color: var(--muted); font-size: 15px; }
+  #status.bad { color: var(--bad); } #status.ok { color: var(--ok); }
+  .progress { height: 6px; background: #222; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+  /* result */
+  #result { border-width: 2px; }
+  #result.rule1, #result.rule2, #result.rule3 { border-color: var(--ok); }
+  #result.rule4 { border-color: var(--warn); }
+  #result.rule5 { border-color: var(--bad); }
+  #result.manual { border-color: var(--info); }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 800;
+    letter-spacing: .03em; background: #222; color: var(--text); }
+  .b-ok { background: #052e16; color: #86efac; } .b-warn { background: #3a2503; color: #fcd34d; }
+  .b-bad { background: #3b0a0a; color: #fca5a5; } .b-info { background: #082f49; color: #7dd3fc; }
+  #chosen { font-size: 40px; font-weight: 800; letter-spacing: .04em; margin: 8px 0 4px; word-break: break-all; }
+  #reason { color: #e5e5e5; font-size: 16px; }
+  .warn { color: #fcd34d; font-size: 15px; margin-top: 6px; }
+  .warn::before { content: "⚠ "; }
+  #barcodeBox { background: #fff; border-radius: 14px; padding: 12px 8px; margin-top: 12px; text-align: center; }
+  #barcodeBox svg { width: 100%; height: auto; max-height: 260px; display: block; }
+  #bcError { color: var(--bad); font-weight: 700; margin-top: 8px; }
+
+  /* candidates */
+  .cand { width: 100%; justify-content: space-between; text-align: left; margin-bottom: 8px; min-height: 64px; }
+  .cand .v { font: 800 22px/1.15 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+  .cand .k { font-size: 13px; font-weight: 600; color: var(--muted); display: block; margin-top: 2px; }
+  .cand.sel { border-color: var(--accent); background: #1f1a00; }
+  .cand .pick { flex: 0 0 auto; font-size: 14px; color: var(--accent); }
+  .raw { font-size: 14px; color: #d4d4d4; }
+  .raw li { margin: 4px 0; word-break: break-all; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { min-height: 40px; font-size: 15px; padding: 4px 10px; font-family: ui-monospace, Menlo, monospace; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 6px 0; }
+
+  /* fullscreen barcode */
+  #full { position: fixed; inset: 0; background: #fff; z-index: 50; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 16px; }
+  #full svg { width: 100%; max-width: 100%; height: auto; max-height: 80vh; }
+  #full p { color: #000; font: 600 16px system-ui; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>M13 · Баркод AutoDoc<small>ArticleId → ArticleNr → длинный код → EAN</small></h1>
+    <button id="btnReset" class="danger small" type="button">НОВЫЙ ТОВАР</button>
+  </header>
+
+  <section class="panel">
+    <div class="row">
+      <button id="btnCam" class="primary" type="button">📷 СКАНЕР</button>
+      <label class="btn" for="photoInput">🖼 ФОТО<input id="photoInput" type="file" accept="image/*" class="hidden"></label>
+    </div>
+    <div id="camBox" class="hidden">
+      <div id="reader"></div>
+      <div class="row" style="margin-top:8px">
+        <button id="btnFrame" type="button">📸 КАДР + ТЕКСТ</button>
+        <button id="btnStop" type="button">■ СТОП</button>
+      </div>
+    </div>
+    <form id="manualForm" class="row" style="margin-top:10px" autocomplete="off">
+      <input id="manual" placeholder="Код или текст: ArticleId 224800" enterkeyhint="done" style="flex:3 1 0">
+      <button class="small" type="submit" style="flex:1 1 0">ДОБАВИТЬ</button>
+    </form>
+    <div id="status"></div>
+    <div class="progress hidden" id="progress"><div></div></div>
+  </section>
+
+  <h2>Результат</h2>
+  <section id="result" class="panel rule5">
+    <span id="ruleBadge" class="badge b-bad">НЕТ ДАННЫХ</span>
+    <div id="chosen" class="mono">—</div>
+    <div id="reason">Отсканируйте этикетку, сфотографируйте её или введите код.</div>
+    <div id="warnings"></div>
+
+    <label for="finalCode" style="display:block;margin-top:12px;color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.08em">Код для печати (можно исправить)</label>
+    <input id="finalCode" class="mono" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="—">
+    <div id="barcodeBox" class="hidden"><svg id="barcode"></svg></div>
+    <div id="bcError"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnFull" class="primary" type="button" disabled>⛶ НА ВЕСЬ ЭКРАН</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnCopy" class="small" type="button" disabled>КОПИРОВАТЬ</button>
+      <button id="btnPng" class="small" type="button" disabled>PNG</button>
+    </div>
+  </section>
+
+  <h2>Найденные коды: нажмите, чтобы выбрать</h2>
+  <section id="cands"><p class="raw">Пока ничего.</p></section>
+
+  <h2>Сырые данные</h2>
+  <section class="panel">
+    <ul id="rawCodes" class="raw" style="padding-left:18px;margin:0 0 10px"><li>Штрих-кодов нет</li></ul>
+    <label for="labelText" style="color:var(--muted);font-size:13px">Текст этикетки (OCR или вручную; правка сразу пересчитывает выбор)</label>
+    <textarea id="labelText" spellcheck="false" placeholder="Например:&#10;ArticleId: 224800&#10;ArticleNr: 6PK1050"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:15px;color:var(--muted)">
+      <input id="ocrOn" type="checkbox" style="width:22px;height:22px" checked> Распознавать текст (OCR) на фото и кадрах
+    </label>
+  </section>
+
+  <h2>Последние коды</h2>
+  <section class="chips" id="history"></section>
+
+  <details style="margin-top:18px"><summary>Правила выбора</summary>
+    <ol class="raw">
+      <li><b>ArticleId</b> на этикетке: берём это число.</li>
+      <li><b>ArticleNr</b> и рядом Code-128: берём ArticleNr (значение сверяется со штрих-кодом).</li>
+      <li>Длинный цифровой код (14+ цифр, напр. 2248000001777346985): первые 6 цифр.</li>
+      <li>EAN производителя (13 цифр): только запасной вариант.</li>
+      <li>Иначе показываем все коды, выбираете вручную.</li>
+    </ol>
+  </details>
+</main>
+
+<div id="full" class="hidden" role="dialog" aria-label="Штрих-код на весь экран">
+  <svg id="fullBarcode"></svg>
+  <p>Нажмите, чтобы закрыть</p>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+'use strict';
+const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js';
+
+/* ═════════════ Rule engine (pure functions) ═════════════ */
+
+function gtinValid(s) {
+  if (!/^\d+$/.test(s) || ![8, 12, 13, 14].includes(s.length)) return false;
+  let sum = 0;
+  for (let i = s.length - 2, w = 3; i >= 0; i--, w = 4 - w) sum += +s[i] * w;
+  return (10 - (sum % 10)) % 10 === +s[s.length - 1];
+}
+
+// OCR often confuses these with digits; applied only inside an ArticleId value.
+const DIGIT_FIX = { O: '0', o: '0', D: '0', Q: '0', I: '1', l: '1', i: '1', '|': '1', L: '1', S: '5', s: '5', B: '8', Z: '2', z: '2', G: '6' };
+const fixDigits = (s) => s.replace(/[OoDQIli|LSsBZzG]/g, (c) => DIGIT_FIX[c]);
+
+// 1:1 character map so that indices in the "loose" text match the original text.
+// Makes the labels tolerant to OCR: Artic1eId, ArticleID, ArticleId, Article Id…
+function loose(text) {
+  let out = '';
+  for (const ch of text) {
+    const c = ch.toLowerCase()[0] || ch;
+    out += /[1|!íıi]/.test(c) ? 'l' : c;
+  }
+  return out;
+}
+
+const SEP = '[\\s:;.#=\\-–—|]{0,8}';
+const ID_LABEL = /(?<![a-z])(?:artlcle\s*[-_.]?\s*ld|art\.?\s*[-_]?\s*ld)(?![a-z])/g;
+const NR_LABEL = /(?<![a-z])(?:artlcle\s*[-_.]?\s*(?:nr|no|number|nummer)|art\.?\s*-?\s*nr)\.?(?![a-z])/g;
+const ID_VALUE = new RegExp('^' + SEP + '([0-9OoIl|SBZ]{4,10})(?![0-9A-Za-z])');
+const NR_VALUE = new RegExp('^' + SEP + '([A-Za-z0-9][A-Za-z0-9\\-./]*(?: (?=\\S*\\d)[A-Za-z0-9\\-./]+)*)');
+
+/** Find "ArticleId: …" and "ArticleNr: …" values in free text (OCR, manual input, 2D codes). */
+function parseFields(text) {
+  const src = String(text || '');
+  const lz = loose(src);
+  const ids = new Map();
+  const nrs = new Map();
+  let m;
+  ID_LABEL.lastIndex = 0;
+  while ((m = ID_LABEL.exec(lz))) {
+    const v = src.slice(m.index + m[0].length, m.index + m[0].length + 40).match(ID_VALUE);
+    if (!v) continue;
+    const realDigits = (v[1].match(/\d/g) || []).length;
+    const fixed = fixDigits(v[1]);
+    if (realDigits >= 3 && /^\d{4,10}$/.test(fixed)) ids.set(fixed, (ids.get(fixed) || 0) + 1);
+  }
+  NR_LABEL.lastIndex = 0;
+  while ((m = NR_LABEL.exec(lz))) {
+    const v = src.slice(m.index + m[0].length, m.index + m[0].length + 60).match(NR_VALUE);
+    if (!v) continue;
+    const val = v[1].replace(/[.\-/]+$/, '').toUpperCase();
+    if (/\d/.test(val) && val.length >= 2 && val.length <= 30) nrs.set(val, (nrs.get(val) || 0) + 1);
+  }
+  const sorted = (map) => [...map].sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
+  return { articleIds: sorted(ids), articleNrs: sorted(nrs) };
+}
+
+/** What a scanned value looks like. */
+function classify(value) {
+  if (/^\d+$/.test(value)) {
+    if ([8, 12, 13].includes(value.length) && gtinValid(value)) return 'ean';
+    if (value.length >= 15 || (value.length === 14 && !gtinValid(value))) return 'long';
+    if (value.length === 14) return 'ean';
+  }
+  return 'other';
+}
+
+const normCmp = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+const FORMAT_NAMES = { CODE_128: 'Code-128', EAN_13: 'EAN-13', EAN_8: 'EAN-8', UPC_A: 'UPC-A', UPC_E: 'UPC-E',
+  CODE_39: 'Code-39', ITF: 'ITF', QR_CODE: 'QR', DATA_MATRIX: 'DataMatrix', MANUAL: 'ввод вручную' };
+
+/**
+ * Apply the M13 rules.
+ * @param {{value:string, format:string, source:string}[]} codes
+ * @param {string} text  OCR / typed label text
+ */
+function analyze(codes, text) {
+  const fields = parseFields([text, ...codes.map((c) => c.value)].join('\n'));
+  const kinds = codes.map((c) => ({ ...c, kind: classify(c.value) }));
+  const longs = kinds.filter((c) => c.kind === 'long');
+  const eans = kinds.filter((c) => c.kind === 'ean');
+  const code128 = kinds.filter((c) => c.format === 'CODE_128');
+  const warnings = [];
+  const candidates = [];
+  const addCand = (value, kind, note) => {
+    if (!candidates.some((c) => c.value === value)) candidates.push({ value, kind, note });
+  };
+  for (const f of fields.articleIds) addCand(f.value, 'ArticleId', `текст${f.count > 1 ? ` ×${f.count}` : ''}`);
+  for (const f of fields.articleNrs) addCand(f.value, 'ArticleNr', 'текст');
+  for (const c of longs) addCand(c.value.slice(0, 6), 'ArticleId из длинного кода', c.value);
+  for (const c of kinds) {
+    const label = c.kind === 'ean' ? 'EAN производителя' : c.kind === 'long' ? 'длинный код' : 'штрих-код';
+    addCand(c.value, label, FORMAT_NAMES[c.format] || c.format || '');
+  }
+  const done = (code, rule, title, reason) => ({ code, rule, title, reason, warnings, candidates, fields });
+  const longPrefixes = [...new Set(longs.map((c) => c.value.slice(0, 6)))];
+
+  // 1. ArticleId field
+  if (fields.articleIds.length) {
+    const confirmed = fields.articleIds.find((f) => longs.some((c) => c.value.startsWith(f.value)));
+    const pick = confirmed || fields.articleIds[0];
+    if (fields.articleIds.length > 1) {
+      warnings.push(`Найдено несколько ArticleId: ${fields.articleIds.map((f) => f.value).join(', ')}. Проверьте.`);
+    }
+    if (longs.length && !confirmed) {
+      warnings.push(`Длинный код начинается с ${longPrefixes.join(', ')}, а ArticleId ${pick.value}. Проверьте этикетку.`);
+    }
+    return done(pick.value, 1, 'ПРАВИЛО 1 · ArticleId',
+      `На этикетке есть поле ArticleId = ${pick.value}${confirmed ? ', подтверждено длинным кодом' : ''}.`);
+  }
+
+  // 2. ArticleNr + Code-128
+  if (fields.articleNrs.length && (code128.length || !codes.length)) {
+    const nr = fields.articleNrs[0].value;
+    const exact = code128.find((c) => normCmp(c.value) === normCmp(nr));
+    if (exact) {
+      return done(exact.value, 2, 'ПРАВИЛО 2 · ArticleNr + Code-128', `ArticleNr ${nr} совпадает с Code-128 на этикетке.`);
+    }
+    const near = code128
+      .filter((c) => c.kind === 'other')
+      .map((c) => ({ c, d: editDistance(normCmp(c.value), normCmp(nr)) }))
+      .sort((a, b) => a.d - b.d)[0];
+    if (near && near.d <= 2) {
+      warnings.push(`OCR прочитал ArticleNr как «${nr}». Взято точное значение из Code-128.`);
+      return done(near.c.value, 2, 'ПРАВИЛО 2 · ArticleNr + Code-128', `ArticleNr ≈ Code-128 ${near.c.value} (различие в OCR).`);
+    }
+    if (!codes.length) warnings.push('Штрих-коды не сканировались: Code-128 рядом с ArticleNr не подтверждён.');
+    else warnings.push('Code-128 на этикетке есть, но его значение не совпало с ArticleNr. Проверьте.');
+    return done(nr, 2, 'ПРАВИЛО 2 · ArticleNr', `Поле ArticleNr = ${nr}.`);
+  }
+
+  // 3. Long code starting with ArticleId
+  if (longs.length) {
+    const counts = new Map();
+    for (const p of longs.map((c) => c.value.slice(0, 6))) counts.set(p, (counts.get(p) || 0) + 1);
+    const prefix = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+    if (longPrefixes.length > 1) warnings.push(`Длинные коды с разным началом: ${longPrefixes.join(', ')}.`);
+    return done(prefix, 3, 'ПРАВИЛО 3 · начало длинного кода',
+      `Длинный код ${longs.find((c) => c.value.startsWith(prefix)).value}: первые 6 цифр = ArticleId.`);
+  }
+
+  // 4. Manufacturer EAN, fallback only
+  if (eans.length) {
+    const ean = eans.find((c) => c.value.length === 13) || eans[0];
+    warnings.push('Это EAN производителя, только запасной вариант. Поищите на этикетке ArticleId / ArticleNr.');
+    return done(ean.value, 4, 'ПРАВИЛО 4 · EAN (запасной)', `Других кодов AutoDoc не найдено, взят EAN ${ean.value}.`);
+  }
+
+  // 5. Nothing matched: the user chooses
+  const manual = kinds.filter((c) => c.source === 'manual');
+  if (candidates.length === 1 && manual.length === 1) {
+    return done(manual[0].value, 'manual', 'ВВЕДЕНО ВРУЧНУЮ', 'Код введён вручную.');
+  }
+  return done('', 5, candidates.length ? 'ПРАВИЛО 5 · ВЫБЕРИТЕ КОД' : 'НЕТ ДАННЫХ',
+    candidates.length ? 'Ни одно правило не подошло. Нажмите нужный код в списке ниже.' : 'Отсканируйте этикетку, сфотографируйте её или введите код.');
+}
+
+/* ═════════════ App state & UI ═════════════ */
+
+const $ = (s) => document.querySelector(s);
+const state = { codes: [], text: '', override: null, result: null };
+
+function setStatus(msg, tone = '') {
+  const el = $('#status');
+  el.textContent = msg;
+  el.className = tone;
+}
+function setProgress(p) {
+  const bar = $('#progress');
+  bar.classList.toggle('hidden', p === null);
+  if (p !== null) bar.firstElementChild.style.width = `${Math.round(p * 100)}%`;
+}
+
+let audio;
+function beep(ok = true) {
+  try {
+    audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.frequency.value = ok ? 1400 : 300;
+    g.gain.value = 0.1;
+    o.connect(g).connect(audio.destination);
+    o.start();
+    o.stop(audio.currentTime + (ok ? 0.07 : 0.2));
+  } catch { /* no audio */ }
+  navigator.vibrate?.(ok ? 50 : [80, 50, 80]);
+}
+
+/** Add a decoded barcode; returns true when it is new for this item. */
+function addCode(value, format, source) {
+  const v = String(value || '').trim();
+  if (!v) return false;
+  const existing = state.codes.find((c) => c.value === v);
+  if (existing) {
+    if (existing.format === 'MANUAL' && format !== 'MANUAL') existing.format = format;
+    return false;
+  }
+  state.codes.push({ value: v, format: format || 'UNKNOWN', source });
+  return true;
+}
+
+function el(tag, props = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null) e.append(c instanceof Node ? c : document.createTextNode(c));
+  return e;
+}
+
+function refresh() {
+  const r = analyze(state.codes, state.text);
+  state.result = r;
+  const box = $('#result');
+  const cls = r.rule === 'manual' ? 'manual' : `rule${r.rule}`;
+  box.className = `panel ${cls}`;
+  const badge = $('#ruleBadge');
+  badge.textContent = state.override !== null ? 'ВЫБРАНО / ИСПРАВЛЕНО ВРУЧНУЮ' : r.title;
+  badge.className = 'badge ' + (state.override !== null || r.rule === 'manual' ? 'b-info'
+    : r.rule <= 3 ? 'b-ok' : r.rule === 4 ? 'b-warn' : 'b-bad');
+  const code = state.override !== null ? state.override : r.code;
+  $('#chosen').textContent = code || '—';
+  $('#reason').textContent = state.override !== null
+    ? `Автовыбор был: ${r.code || 'нет'} (${r.title}).`
+    : r.reason;
+  $('#warnings').replaceChildren(...r.warnings.map((w) => el('div', { class: 'warn' }, w)));
+  if (document.activeElement !== $('#finalCode')) $('#finalCode').value = code;
+  renderBarcode(code);
+
+  const cands = $('#cands');
+  if (!r.candidates.length) cands.replaceChildren(el('p', { class: 'raw' }, 'Пока ничего.'));
+  else cands.replaceChildren(...r.candidates.map((c) =>
+    el('button', {
+      type: 'button',
+      class: 'cand' + (c.value === code ? ' sel' : ''),
+      onclick: () => { state.override = c.value; refresh(); beep(); },
+    },
+    el('span', {}, el('span', { class: 'v' }, c.value), el('span', { class: 'k' }, `${c.kind}${c.note ? ' · ' + c.note : ''}`)),
+    el('span', { class: 'pick' }, c.value === code ? '✓ ВЫБРАН' : 'ВЫБРАТЬ'))));
+
+  $('#rawCodes').replaceChildren(...(state.codes.length
+    ? state.codes.map((c) => el('li', {}, el('b', { class: 'mono' }, c.value), ` · ${FORMAT_NAMES[c.format] || c.format} · ${c.source} · ${classify(c.value)}`))
+    : [el('li', {}, 'Штрих-кодов нет')]));
+}
+
+function renderBarcode(code) {
+  const ok = !!code && /^[\x20-\x7e]+$/.test(code);
+  $('#bcError').textContent = code && !ok ? 'Code-128: только латиница, цифры и символы ASCII' : '';
+  $('#barcodeBox').classList.toggle('hidden', !ok);
+  for (const id of ['#btnFull', '#btnCopy', '#btnPng']) $(id).disabled = !ok;
+  if (!ok) return;
+  drawSvg($('#barcode'), code, 3, 150, 30);
+}
+
+function drawSvg(svg, code, width, height, fontSize) {
+  JsBarcode(svg, code, { format: 'CODE128', width, height, fontSize, margin: 16, displayValue: true,
+    font: 'monospace', fontOptions: 'bold', background: '#ffffff', lineColor: '#000000' });
+  // Scale to the container instead of a fixed pixel size.
+  const w = svg.getAttribute('width');
+  const h = svg.getAttribute('height');
+  svg.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`);
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+}
+
+function remember(code) {
+  if (!code) return;
+  try {
+    const list = JSON.parse(localStorage.getItem('m13.history') || '[]').filter((c) => c !== code);
+    list.unshift(code);
+    localStorage.setItem('m13.history', JSON.stringify(list.slice(0, 12)));
+  } catch { /* storage unavailable */ }
+  renderHistory();
+}
+function renderHistory() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('m13.history') || '[]'); } catch { /* ignore */ }
+  $('#history').replaceChildren(...(list.length ? list.map((c) =>
+    el('button', { type: 'button', onclick: () => { state.override = c; refresh(); } }, c))
+    : [el('span', { class: 'raw' }, 'Пусто')]));
+}
+
+const currentCode = () => (state.override !== null ? state.override : state.result?.code) || '';
+
+/* ═════════════ Live camera (html5-qrcode) ═════════════ */
+
+let qr = null;
+async function startCamera() {
+  if (!window.Html5Qrcode) return setStatus('Библиотека сканера не загрузилась (нет интернета?)', 'bad');
+  if (!window.isSecureContext) return setStatus('Камера работает только по https://. Используйте кнопку ФОТО.', 'bad');
+  const F = Html5QrcodeSupportedFormats;
+  qr ??= new Html5Qrcode('reader', {
+    verbose: false,
+    formatsToSupport: [F.CODE_128, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX],
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+  });
+  $('#camBox').classList.remove('hidden');
+  $('#btnCam').disabled = true;
+  try {
+    await qr.start({ facingMode: 'environment' }, {
+      fps: 12,
+      qrbox: (w, h) => ({ width: Math.floor(w * 0.92), height: Math.floor(Math.min(h * 0.7, w * 0.6)) }),
+      videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    }, onLiveDecode, () => {});
+    setStatus('Сканер включён: проведите камерой по всем штрих-кодам этикетки.');
+  } catch (err) {
+    $('#camBox').classList.add('hidden');
+    $('#btnCam').disabled = false;
+    setStatus(/NotAllowed|Permission/i.test(String(err)) ? 'Нет доступа к камере: разрешите его в настройках браузера.' : `Камера: ${err}`, 'bad');
+  }
+}
+async function stopCamera() {
+  try { if (qr?.isScanning) await qr.stop(); } catch { /* already stopped */ }
+  $('#camBox').classList.add('hidden');
+  $('#btnCam').disabled = false;
+}
+function onLiveDecode(text, result) {
+  const fmt = result?.result?.format?.formatName || 'UNKNOWN';
+  if (addCode(text, fmt, 'камера')) {
+    beep();
+    setStatus(`+ ${text} (${FORMAT_NAMES[fmt] || fmt}) · всего кодов: ${state.codes.length}`, 'ok');
+    refresh();
+  }
+}
+function grabFrame() {
+  const video = $('#reader video');
+  if (!video || !video.videoWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth;
+  c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  return c;
+}
+
+/* ═════════════ Photo / frame analysis: all barcodes + OCR ═════════════ */
+
+const scriptCache = {};
+function loadScript(url, globalName) {
+  if (window[globalName]) return Promise.resolve(window[globalName]);
+  scriptCache[url] ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = () => resolve(window[globalName]);
+    s.onerror = () => { delete scriptCache[url]; reject(new Error(`Не загрузилась библиотека ${globalName} (нет интернета?)`)); };
+    document.head.append(s);
+  });
+  return scriptCache[url];
+}
+
+async function fileToCanvas(file) {
+  let img;
+  try {
+    img = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    img = new Image();
+    img.src = URL.createObjectURL(file);
+    await img.decode();
+  }
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  c.getContext('2d').drawImage(img, 0, 0);
+  img.close?.();
+  return c;
+}
+
+/** Draw a region (fractions) of `src`, scaled to maxSide, optionally rotated 90°. */
+function crop(src, r, rotate, maxSide) {
+  const sx = src.width * r.x, sy = src.height * r.y, sw = src.width * r.w, sh = src.height * r.h;
+  const k = Math.min(1, maxSide / Math.max(sw, sh));
+  const w = Math.round(sw * k), h = Math.round(sh * k);
+  const c = document.createElement('canvas');
+  c.width = rotate ? h : w;
+  c.height = rotate ? w : h;
+  const ctx = c.getContext('2d');
+  if (rotate) { ctx.translate(c.width / 2, c.height / 2); ctx.rotate(Math.PI / 2); ctx.drawImage(src, sx, sy, sw, sh, -w / 2, -h / 2, w, h); }
+  else ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  return c;
+}
+
+function gridRegions(n, size) {
+  const out = [];
+  const step = n > 1 ? (1 - size) / (n - 1) : 0;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) out.push({ x: x * step, y: y * step, w: size, h: size });
+  return out;
+}
+
+/** All barcodes on the picture: native BarcodeDetector + ZXing over overlapping tiles. */
+async function findAllBarcodes(src, onProgress) {
+  const found = new Map();
+  if ('BarcodeDetector' in window) {
+    try {
+      const det = new BarcodeDetector();
+      for (const b of await det.detect(src)) found.set(b.rawValue.trim(), String(b.format).toUpperCase());
+    } catch { /* unsupported formats on this device */ }
+  }
+  const Z = await loadScript(ZXING_URL, 'ZXing');
+  const F = Z.BarcodeFormat;
+  const hints = new Map([
+    [Z.DecodeHintType.POSSIBLE_FORMATS, [F.CODE_128, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX]],
+    [Z.DecodeHintType.TRY_HARDER, true],
+  ]);
+  const reader = new Z.MultiFormatReader();
+  // ZXing returns one code per image, so a label with several codes is read tile by tile.
+  const regions = [{ x: 0, y: 0, w: 1, h: 1 }, ...gridRegions(2, 0.6), ...gridRegions(3, 0.45), ...gridRegions(4, 0.34)];
+  const jobs = regions.flatMap((r) => [[r, false], [r, true]]);
+  const t0 = performance.now();
+  for (let i = 0; i < jobs.length; i++) {
+    if (performance.now() - t0 > 6000) break;
+    onProgress((i + 1) / jobs.length);
+    await new Promise((r) => setTimeout(r));
+    const [r, rot] = jobs[i];
+    try {
+      const res = reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(crop(src, r, rot, 1400)))), hints);
+      const text = res.getText().trim();
+      if (text && !found.has(text)) found.set(text, F[res.getBarcodeFormat()] || 'UNKNOWN');
+    } catch { /* no code in this tile */ }
+  }
+  return [...found].map(([value, format]) => ({ value, format }));
+}
+
+let ocrWorker = null;
+async function getOcrWorker(onProgress) {
+  if (ocrWorker) return ocrWorker;
+  const T = await loadScript(TESSERACT_URL, 'Tesseract');
+  ocrWorker = T.createWorker('eng', 1, {
+    logger: (m) => {
+      if (m.status === 'recognizing text') onProgress?.(m.progress, 'Распознаю текст');
+      else if (/loading/.test(m.status)) onProgress?.(m.progress, 'Загружаю OCR-модель (один раз)');
+    },
+  }).then(async (w) => {
+    await w.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1' }); // sparse text: labels
+    return w;
+  }).catch((e) => { ocrWorker = null; throw e; });
+  return ocrWorker;
+}
+
+/** Grayscale + contrast stretch, ~2000 px long side: better OCR on thermal labels. */
+function prepForOcr(src) {
+  const long = Math.max(src.width, src.height);
+  const k = long < 1200 ? 2 : Math.min(1, 2000 / long);
+  const c = document.createElement('canvas');
+  c.width = Math.round(src.width * k);
+  c.height = Math.round(src.height * k);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  let min = 255, max = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    d[i] = g;
+    if (g < min) min = g;
+    if (g > max) max = g;
+  }
+  const range = Math.max(max - min, 1);
+  for (let i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = ((d[i] - min) * 255) / range;
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+let busy = false;
+async function analyzeImage(src, source) {
+  if (busy) return;
+  busy = true;
+  try {
+    setStatus('Ищу штрих-коды…');
+    const codes = await findAllBarcodes(src, (p) => setProgress(p));
+    let added = 0;
+    for (const c of codes) if (addCode(c.value, c.format, source)) added++;
+    refresh();
+    setStatus(codes.length ? `Штрих-кодов на снимке: ${codes.length} (новых ${added})` : 'Штрих-коды на снимке не найдены', codes.length ? 'ok' : '');
+    if (codes.length) beep();
+
+    if ($('#ocrOn').checked) {
+      const msg = (p, label) => { setProgress(p); setStatus(`${label}… ${Math.round(p * 100)}%`); };
+      const worker = await getOcrWorker(msg);
+      msg(0, 'Распознаю текст');
+      const { data } = await worker.recognize(prepForOcr(src));
+      const text = data.text.replace(/\n{2,}/g, '\n').trim();
+      if (text) {
+        state.text = [state.text, `--- ${source} ---`, text].filter(Boolean).join('\n');
+        $('#labelText').value = state.text;
+      }
+      refresh();
+      const f = state.result.fields;
+      setStatus(`Готово. Коды: ${state.codes.length}. Текст: ${f.articleIds.length ? 'ArticleId ✓ ' : ''}${f.articleNrs.length ? 'ArticleNr ✓' : ''}${!f.articleIds.length && !f.articleNrs.length ? 'поля ArticleId/ArticleNr не найдены' : ''}`, 'ok');
+    }
+  } catch (err) {
+    setStatus(err.message || String(err), 'bad');
+    beep(false);
+  } finally {
+    setProgress(null);
+    busy = false;
+  }
+}
+
+/* ═════════════ Events ═════════════ */
+
+$('#btnCam').addEventListener('click', startCamera);
+$('#btnStop').addEventListener('click', stopCamera);
+$('#btnFrame').addEventListener('click', () => {
+  const frame = grabFrame();
+  if (frame) analyzeImage(frame, 'кадр');
+  else setStatus('Кадр ещё не готов', 'bad');
+});
+$('#photoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (qr?.isScanning) await stopCamera();
+  try { analyzeImage(await fileToCanvas(file), 'фото'); }
+  catch { setStatus('Не удалось открыть изображение', 'bad'); }
+});
+
+$('#manualForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('#manual').value.trim();
+  if (!v) return;
+  const f = parseFields(v);
+  if (f.articleIds.length || f.articleNrs.length) {
+    state.text = [state.text, v].filter(Boolean).join('\n');
+    $('#labelText').value = state.text;
+  } else {
+    addCode(v, 'MANUAL', 'manual');
+  }
+  $('#manual').value = '';
+  refresh();
+});
+
+let textTimer;
+$('#labelText').addEventListener('input', () => {
+  clearTimeout(textTimer);
+  textTimer = setTimeout(() => { state.text = $('#labelText').value; refresh(); }, 250);
+});
+
+$('#finalCode').addEventListener('input', () => {
+  const v = $('#finalCode').value.trim();
+  state.override = v === (state.result?.code || '') ? null : v;
+  refresh();
+});
+$('#finalCode').addEventListener('change', () => remember(currentCode()));
+
+$('#btnReset').addEventListener('click', () => {
+  state.codes = [];
+  state.text = '';
+  state.override = null;
+  $('#labelText').value = '';
+  $('#manual').value = '';
+  setStatus('Новый товар: отсканируйте этикетку.');
+  refresh();
+});
+
+let wakeLock = null;
+$('#btnFull').addEventListener('click', async () => {
+  const code = currentCode();
+  if (!code) return;
+  remember(code);
+  drawSvg($('#fullBarcode'), code, 4, 220, 40);
+  $('#full').classList.remove('hidden');
+  try { await document.documentElement.requestFullscreen?.(); } catch { /* not allowed */ }
+  try { await screen.orientation?.lock?.('landscape'); } catch { /* not supported */ }
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { /* not supported */ }
+});
+$('#full').addEventListener('click', async () => {
+  $('#full').classList.add('hidden');
+  try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+  try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+  try { await wakeLock?.release(); } catch { /* ignore */ }
+});
+$('#btnCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(currentCode()); setStatus('Скопировано', 'ok'); }
+  catch { setStatus('Копирование недоступно', 'bad'); }
+});
+$('#btnPng').addEventListener('click', () => {
+  const code = currentCode();
+  const c = document.createElement('canvas');
+  JsBarcode(c, code, { format: 'CODE128', width: 4, height: 200, fontSize: 40, margin: 24, font: 'monospace', fontOptions: 'bold' });
+  remember(code);
+  c.toBlob((b) => {
+    const a = el('a', { href: URL.createObjectURL(b), download: `code128-${code.replace(/[^\w-]/g, '_')}.png` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  });
+});
+
+window.M13 = { analyze, parseFields, classify }; // for checks from the console
+renderHistory();
+refresh();
+</script>
+</body>
+</html>
