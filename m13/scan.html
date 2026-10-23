@@ -3,9 +3,11 @@
   M13 · Быстрый ArticleId → Code-128
   ──────────────────────────────────
   1. Нажмите «СКАНИРОВАТЬ» и держите камеру над этикеткой 2–3 секунды (штрих-коды и текст в кадре).
-  2. Первый считанный код сразу появляется сверху. Параллельно OCR ищет на этикетке «ArticleId»;
-     как только находит, код заменяется на ArticleId и камера выключается сама.
-     Порядок: ArticleId → ArticleNr → EAN-13 → любой другой код.
+  2. Первый считанный код сразу появляется сверху. Параллельно OCR читает этикетку и подменяет код
+     на рабочий ArticleId, как только находит его; камера выключается сама.
+     Порядок: поле «ArticleId» → поле «ArticleNr» → ArticleId, найденный сам: самый крупный номер
+     на этикетке (напр. 251310 на коробке Valeo; подтверждается, если он есть внутри EAN или
+     штрих-кода) → EAN-13 → любой другой код.
   3. Большой Code-128 готов. Кнопки:
      «НА ВЕСЬ ЭКРАН»: показать сканеру; «AUTODOC»: проверить номер на autodoc.pl;
      «ДРУГОЙ КОД»: выбрать другой найденный код или ввести вручную; «СЛЕДУЮЩИЙ»: новый товар.
@@ -44,12 +46,12 @@
   #scanInfo { margin-top: 8px; font-size: 16px; color: var(--muted); min-height: 22px; }
 
   #card { background: var(--panel); border: 3px solid var(--line); border-radius: 18px; padding: 12px; margin-top: 10px; }
-  #card.k-articleid { border-color: var(--ok); }
+  #card.k-articleid, #card.k-derived { border-color: var(--ok); }
   #card.k-articlenr { border-color: #3b82f6; }
   #card.k-ean, #card.k-other { border-color: var(--warn); }
   #card.k-manual { border-color: #a855f7; }
   .badge { display: inline-block; padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 900; letter-spacing: .04em; }
-  .b-articleid { background: #052e16; color: #86efac; } .b-articlenr { background: #0b1f4d; color: #93c5fd; }
+  .b-articleid, .b-derived { background: #052e16; color: #86efac; } .b-articlenr { background: #0b1f4d; color: #93c5fd; }
   .b-ean, .b-other { background: #3a2503; color: #fcd34d; } .b-manual { background: #2e1065; color: #d8b4fe; } .b-none { background: #222; color: #ccc; }
   #code { font: 900 44px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; margin: 8px 0 2px; word-break: break-all; }
   #why { color: #d4d4d4; font-size: 15px; }
@@ -178,24 +180,58 @@ function editDistance(a, b) {
   return d[a.length][b.length];
 }
 
+/**
+ * Make the ArticleId ourselves when the label has no "ArticleId"/"ArticleNr" field:
+ * the article number is the biggest number printed on the label (e.g. "251310" on a
+ * Valeo box). Font size comes from OCR word heights; a number that also sits inside
+ * the EAN (Valeo: 327642·251310·8) or equals a scanned barcode is confirmed.
+ * @param {Map<string, {text, rel, conf, count}>} words  normalized token → best sighting
+ */
+function deriveArticle(words, codes) {
+  const eans = codes.map((c) => c.value).filter((v) => /^\d{8,14}$/.test(v) && gtinValid(v));
+  // The digits printed under an EAN-13 ("3 276422 513108") are not article numbers.
+  const eanGroups = new Set(eans.flatMap((e) => (e.length === 13 ? [e.slice(1, 7), e.slice(7)] : [e.slice(0, 4), e.slice(4)])));
+  const out = [];
+  for (const w of words.values()) {
+    const t = w.text;
+    const digits = t.replace(/\D/g, '');
+    if (t.length < 4 || t.length > 20 || digits.length < 3) continue;
+    if (!/^[A-Za-z0-9][A-Za-z0-9.\-/]*$/.test(t)) continue;
+    if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(t) || /^(19|20)\d\d$/.test(t)) continue; // dates, years
+    if (gtinValid(digits) && digits === t) continue; // the EAN itself, printed
+    if (digits === t && t.length >= 14) continue; // long service codes are not article numbers
+    if (eanGroups.has(t)) continue;
+    let bonus = 0, proof = '';
+    const inEan = digits === t && digits.length >= 5 && eans.find((e) => e.includes(digits));
+    if (inEan) { bonus += 1.5; proof = `есть внутри EAN ${inEan}`; }
+    const asCode = codes.find((c) => normCmp(c.value) === normCmp(t));
+    if (asCode) { bonus += 1.5; proof = `совпадает со штрих-кодом ${FMT[asCode.format] || ''}`; }
+    if (w.rel < 1.6 && !(bonus && w.rel >= 1)) continue; // must stand out on the label
+    out.push({ value: t.toUpperCase(), rel: w.rel, conf: w.conf, count: w.count, confirmed: bonus > 0, proof, score: w.rel + bonus });
+  }
+  return out.sort((a, b) => b.score - a.score || b.conf - a.conf);
+}
+
 const FMT = { CODE_128: 'Code-128', EAN_13: 'EAN-13', EAN_8: 'EAN-8', UPC_A: 'UPC-A', UPC_E: 'UPC-E', CODE_39: 'Code-39', ITF: 'ITF', QR_CODE: 'QR', DATA_MATRIX: 'DataMatrix' };
 
 /**
- * ArticleId → ArticleNr → EAN-13 → any other code.
+ * ArticleId field → ArticleNr field → ArticleId derived from the label → EAN-13 → any other code.
  * @returns {{code, kind, why, candidates}}
  */
-function pick(codes, text) {
+function pick(codes, text, words = new Map()) {
   const f = parseFields([text, ...codes.map((c) => c.value)].join('\n'));
+  const derived = deriveArticle(words, codes);
   const isEan13 = (v) => v.length === 13 && gtinValid(v);
   const candidates = [];
   const add = (value, label) => { if (value && !candidates.some((c) => c.value === value)) candidates.push({ value, label }); };
   f.articleIds.forEach((x) => add(x.value, 'ArticleId (текст)'));
   f.articleNrs.forEach((x) => add(x.value, 'ArticleNr (текст)'));
+  derived.slice(0, 3).forEach((d) => add(d.value, `номер с этикетки, шрифт ×${d.rel.toFixed(1)}${d.proof ? ', ' + d.proof : ''}`));
   for (const c of codes) {
     if (/^\d{14,}$/.test(c.value) && !gtinValid(c.value)) add(c.value.slice(0, 6), `первые 6 цифр длинного кода ${c.value}`);
     add(c.value, (isEan13(c.value) ? 'EAN-13' : FMT[c.format] || c.format) + ' (штрих-код)');
   }
-  const res = (code, kind, why) => ({ code, kind, why, candidates, fields: f });
+  const res = (code, kind, why, extra = {}) => ({ code, kind, why, candidates, fields: f, ...extra });
 
   if (f.articleIds.length) {
     const id = f.articleIds[0].value;
@@ -210,6 +246,11 @@ function pick(codes, text) {
     }
     return res(nr, 'articlenr', 'Поле ArticleNr на этикетке (ArticleId не найден).');
   }
+  if (derived.length) {
+    const d = derived[0];
+    return res(d.value, 'derived', `Поля ArticleId нет: взят самый крупный номер на этикетке (шрифт ×${d.rel.toFixed(1)})${d.proof ? ', ' + d.proof : ''}.`,
+      { confirmed: d.confirmed || d.count >= 2 });
+  }
   const ean = codes.find((c) => isEan13(c.value));
   if (ean) return res(ean.value, 'ean', 'ArticleId и ArticleNr не найдены, взят EAN-13.');
   if (codes.length) return res(codes[0].value, 'other', `ArticleId/ArticleNr/EAN не найдены, взят ${FMT[codes[0].format] || 'штрих-код'}.`);
@@ -219,8 +260,8 @@ function pick(codes, text) {
 /* ═════════ State & UI ═════════ */
 
 const $ = (s) => document.querySelector(s);
-const st = { codes: [], text: '', override: null, result: null, scanning: false, firstHitAt: 0, ocrPasses: 0, ocrDead: false };
-const BADGES = { articleid: 'ArticleId', articlenr: 'ArticleNr', ean: 'EAN-13', other: 'ШТРИХ-КОД', manual: 'ВРУЧНУЮ', none: '—' };
+const st = { codes: [], text: '', words: new Map(), override: null, result: null, scanning: false, firstHitAt: 0, ocrPasses: 0, ocrDead: false };
+const BADGES = { articleid: 'ArticleId', derived: 'ArticleId (авто)', articlenr: 'ArticleNr', ean: 'EAN-13', other: 'ШТРИХ-КОД', manual: 'ВРУЧНУЮ', none: '—' };
 const info = (t) => { $('#scanInfo').textContent = t; };
 
 let audio;
@@ -244,11 +285,14 @@ function addCode(value, format, source) {
   return true;
 }
 
+// Good enough to stop the camera. A self-made ArticleId waits for two OCR passes
+// (frame centre + whole frame) so a real "ArticleId" field elsewhere still wins.
+const isFinal = (r) => r.kind === 'articleid' || (r.kind === 'derived' && r.confirmed && st.ocrPasses >= 2);
 const current = () => (st.override ? st.override.code : st.result?.code) || '';
 
 function render() {
   const prevKind = st.result?.kind;
-  st.result = pick(st.codes, st.text);
+  st.result = pick(st.codes, st.text, st.words);
   const r = st.result;
   const kind = st.override ? 'manual' : r.kind;
   const code = current();
@@ -259,9 +303,9 @@ function render() {
   $('#badge').textContent = BADGES[kind];
   $('#code').textContent = code;
   $('#why').textContent = st.override ? `Выбрано вручную${st.override.label ? ': ' + st.override.label : ''}. Автовыбор: ${r.code || '—'}.` : r.why;
-  $('#pending').classList.toggle('hidden', !(st.scanning && kind !== 'articleid' && !st.ocrDead));
+  $('#pending').classList.toggle('hidden', !(st.scanning && !isFinal(r) && !st.ocrDead));
   drawCode($('#bc'), code, 3, 140, 30);
-  if (prevKind && prevKind !== r.kind && r.kind === 'articleid' && !st.override) beep('win');
+  if (prevKind && prevKind !== r.kind && isFinal(r) && !st.override) beep('win');
 
   $('#cands').replaceChildren(...r.candidates.map((c) => {
     const b = document.createElement('button');
@@ -311,10 +355,10 @@ function getOcr() {
     .catch((e) => { ocr = null; st.ocrDead = true; throw e; }));
 }
 
-/** Grayscale + contrast stretch, long side ≤ maxSide. */
-function prep(src, maxSide) {
+/** Grayscale + contrast stretch; scales the long side to maxSide (upscaling small crops up to ×2.5). */
+function prep(src, maxSide, upscale = false) {
   const long = Math.max(src.width, src.height);
-  const k = long < 900 ? 1.6 : Math.min(1, maxSide / long);
+  const k = upscale ? Math.min(2.5, maxSide / long) : long < 900 ? 1.6 : Math.min(1, maxSide / long);
   const c = document.createElement('canvas');
   c.width = Math.round(src.width * k);
   c.height = Math.round(src.height * k);
@@ -329,9 +373,10 @@ function prep(src, maxSide) {
   return c;
 }
 
-async function ocrImage(canvas, maxSide) {
+async function ocrImage(canvas, maxSide, upscale = false) {
   const w = await getOcr();
-  const { data } = await w.recognize(prep(canvas, maxSide));
+  const { data } = await w.recognize(prep(canvas, maxSide, upscale), {}, { text: true, blocks: true });
+  collectWords(data.blocks || []);
   const t = data.text.replace(/\n{2,}/g, '\n').trim();
   // Keep only new lines so repeated frames do not bloat the text.
   const known = new Set(st.text.split('\n'));
@@ -339,9 +384,42 @@ async function ocrImage(canvas, maxSide) {
   if (fresh.length) st.text += (st.text ? '\n' : '') + fresh.join('\n');
 }
 
+/** Remember readable tokens with their size relative to the normal text on the label. */
+function collectWords(blocks) {
+  const lines = [];
+  for (const b of blocks) for (const p of b.paragraphs || []) for (const l of p.lines || []) {
+    lines.push((l.words || []).filter((w) => w.confidence >= 55).map((w) => ({
+      text: w.text.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, ''), h: w.bbox.y1 - w.bbox.y0, conf: w.confidence,
+    })).filter((w) => w.text));
+  }
+  const hs = lines.flat().filter((w) => w.conf >= 60 && w.text.length >= 2).map((w) => w.h).sort((a, b) => a - b);
+  if (!hs.length) return;
+  const median = Math.max(hs[Math.floor(hs.length / 2)], 1);
+  const keep = (text, h, conf) => {
+    const key = text.toUpperCase();
+    const rel = h / median;
+    const prev = st.words.get(key);
+    st.words.set(key, { text, rel: Math.max(rel, prev?.rel || 0), conf: Math.max(conf, prev?.conf || 0), count: (prev?.count || 0) + 1 });
+  };
+  for (const line of lines) {
+    line.forEach((w) => keep(w.text, w.h, w.conf));
+    // "0 986 494 294": digit groups printed with spaces form one number.
+    for (let i = 0; i < line.length; i++) {
+      let j = i;
+      while (j < line.length && /^\d{1,4}$/.test(line[j].text) && Math.abs(line[j].h - line[i].h) <= line[i].h * 0.45) j++;
+      if (j - i >= 2) {
+        const run = line.slice(i, j);
+        const text = run.map((w) => w.text).join('');
+        if (text.length >= 6) keep(text, run.reduce((a, w) => a + w.h, 0) / run.length, Math.min(...run.map((w) => w.conf)));
+        i = j - 1;
+      }
+    }
+  }
+}
+
 /* ═════════ Live scan: barcodes every frame + OCR loop on video frames ═════════ */
 
-let qr = null, loopTimer = null, ocrBusy = false, zx = null, zxTurn = 0;
+let qr = null, loopTimer = null, ocrBusy = false, zx = null, zxTurn = 0, zxSkip = 0;
 
 // html5-qrcode's built-in ZXing (used when the phone has no native BarcodeDetector,
 // e.g. iPhone) reads only rows near the middle of its box. A second ZXing with
@@ -416,27 +494,34 @@ function grabFrame() {
 
 function tick() {
   if (!st.scanning) return;
-  const r = st.result || pick(st.codes, st.text);
-  if (r.kind === 'articleid') return finish(`Готово: ArticleId ${r.code}.`);
+  const r = st.result || pick(st.codes, st.text, st.words);
+  if (isFinal(r)) return finish(`Готово: ${BADGES[r.kind]} ${r.code}.`);
   const since = st.firstHitAt ? Date.now() - st.firstHitAt : 0;
-  if (st.firstHitAt && (st.ocrDead || (since > WAIT_FOR_ARTICLE_ID_MS && st.ocrPasses >= 2) || since > MAX_SCAN_AFTER_HIT_MS)) {
-    return finish(r.code ? `ArticleId не найден, взят ${BADGES[r.kind]}. Проверьте или выберите другой код.` : 'Ничего не найдено.');
+  if (st.firstHitAt && (st.ocrDead || (since > WAIT_FOR_ARTICLE_ID_MS && st.ocrPasses >= 3) || since > MAX_SCAN_AFTER_HIT_MS)) {
+    return finish(r.kind === 'derived' ? `Готово: ${BADGES[r.kind]} ${r.code}. Проверьте по этикетке.`
+      : r.code ? `ArticleId не найден, взят ${BADGES[r.kind]}. Проверьте или выберите другой код.` : 'Ничего не найдено.');
   }
   const frame = grabFrame();
   if (!frame) return;
-  if (zx) {
+  // Once a code is in hand, OCR matters more: give ZXing only every 4th tick so the
+  // main thread leaves CPU to the OCR worker.
+  if (zx && (!st.codes.length || ++zxSkip % 4 === 0)) {
     const [region, rot] = ZX_REGIONS[zxTurn++ % ZX_REGIONS.length];
     const hit = zx(crop(frame, region, rot, 1280));
     if (hit) onCode(hit[0], hit[1], 'камера');
   }
   if (!ocrBusy && !st.ocrDead) {
     ocrBusy = true;
-    ocrImage(frame, 1600)
+    // Alternate: centre of the frame enlarged (where the picker aims; small print becomes
+    // readable) and the whole frame (label not centred).
+    const centre = st.ocrPasses % 2 === 0;
+    const src = centre ? crop(frame, { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }, false, 1e5) : frame;
+    ocrImage(src, 1400, centre)
       .then(() => {
         st.ocrPasses++;
         const before = st.firstHitAt;
         const f = parseFields(st.text);
-        if (!before && (f.articleIds.length || f.articleNrs.length)) st.firstHitAt = Date.now();
+        if (!before && (f.articleIds.length || f.articleNrs.length || deriveArticle(st.words, st.codes).length)) st.firstHitAt = Date.now();
         if (st.scanning) info(`Читаю текст этикетки… (проход ${st.ocrPasses})`);
         render();
       })
@@ -457,12 +542,12 @@ function finish(message) {
   stopScan();
   info(message);
   render();
-  if (current()) beep(st.result.kind === 'articleid' ? 'win' : 'ok');
+  if (current()) beep(isFinal(st.result) ? 'win' : 'ok');
   $('#card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function reset() {
-  Object.assign(st, { codes: [], text: '', override: null, result: null, firstHitAt: 0, ocrPasses: 0, ocrDead: false });
+  Object.assign(st, { codes: [], text: '', words: new Map(), override: null, result: null, firstHitAt: 0, ocrPasses: 0, ocrDead: false });
   $('#other').classList.add('hidden');
   $('#rawBox').classList.add('hidden');
   render();
@@ -529,7 +614,9 @@ $('#photo').addEventListener('change', async (e) => {
     render();
     info('Читаю текст этикетки…');
     await ocrRun;
-    finish(st.result.kind === 'articleid' ? `Готово: ArticleId ${st.result.code}.` : current() ? `ArticleId не найден, взят ${BADGES[st.result.kind]}.` : 'Ничего не найдено. Снимите ближе и ровнее.');
+    render(); // include what OCR just read
+    const k = st.result.kind;
+    finish(k === 'articleid' || k === 'derived' ? `Готово: ${BADGES[k]} ${st.result.code}.` : current() ? `ArticleId не найден, взят ${BADGES[k]}.` : 'Ничего не найдено. Снимите ближе и ровнее.');
   } catch (err) {
     st.scanning = false;
     info(`Не удалось обработать фото: ${err.message || err}`);
@@ -579,7 +666,7 @@ $('#full').addEventListener('click', async () => {
   try { await wake?.release(); } catch { /* ignore */ }
 });
 
-window.M13 = { pick, parseFields };
+window.M13 = { pick, parseFields, deriveArticle, state: st }; // for checks from the console
 </script>
 </body>
 </html>
