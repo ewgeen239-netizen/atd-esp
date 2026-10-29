@@ -1,0 +1,749 @@
+<!doctype html>
+<!--
+  M13 · Локализации: маршрут по скриншоту + печать штрих-кодов на A4
+  ───────────────────────────────────────────────────────────────────
+  МАРШРУТ
+  1. «СКРИНШОТ»: выберите/вставьте (Ctrl+V) скриншот WMS со списком локализаций товара,
+     или вставьте текст из WMS в поле. Найдутся все коды вида 07.03.02.14.08.01.
+  2. Каждая локализация проверяется по полному списку склада (файлы «18 префиксов» и «07»)
+     и раскладывается: зона · сектор · ряд · секция · уровень · место.
+  3. Порядок обхода по приоритету префиксов (по умолчанию 07 → … → 03): точка А = highrack
+     (ближняя), точка Б = picking/inventory (дальняя). «Я здесь» задаёт вашу позицию: внутри
+     одной зоны точки идут от ближайшей к вам.
+  ПЕЧАТЬ A4
+  4. Коды для печати: из таблицы, по фильтру (напр. 07.03.*) или один код × 32 на лист.
+     Сетку (≈32 на лист) инструмент подбирает сам так, чтобы штрих-код читался лучше всего;
+     размеры, поля, колонки/ряды можно задать вручную. «ПЕЧАТЬ» → принтер или PDF.
+  При первом открытии нужен интернет (JsBarcode, Tesseract ~5 МБ; дальше из кэша).
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>M13 · Локализации и печать A4</title>
+<style>
+  :root { --bg:#000; --panel:#111; --line:#2b2b2b; --text:#fff; --muted:#a3a3a3; --accent:#ffd400; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --hr:#22c55e; --pick:#f97316; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 1100px; margin: 0 auto; padding: 10px 12px 40px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .hidden { display: none !important; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+  .row > * { flex: 1 1 140px; min-width: 0; }
+  button, .btn { appearance: none; border: 2px solid var(--line); background: #1c1c1c; color: var(--text); border-radius: 14px; min-height: 56px;
+    padding: 8px 14px; font: 800 17px/1.1 system-ui, sans-serif; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px; text-align: center; touch-action: manipulation; user-select: none; }
+  button:active, .btn:active { transform: scale(.98); }
+  .primary { background: var(--accent); border-color: var(--accent); color: #000; }
+  .sm { min-height: 40px; font-size: 14px; padding: 6px 10px; border-radius: 10px; }
+  input, textarea, select { width: 100%; background: #000; color: var(--text); border: 2px solid #3a3a3a; border-radius: 12px; padding: 10px 12px;
+    font: 600 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+  input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { min-height: 90px; font-size: 14px; font-weight: 400; resize: vertical; }
+  label.f { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  label.chk { display: flex; align-items: center; gap: 8px; font-size: 15px; color: #ddd; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px; margin-top: 10px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+  .tabs { display: flex; gap: 8px; position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 6px 0; }
+  .tabs button { flex: 1; }
+  .tabs button[aria-selected=true] { background: var(--accent); border-color: var(--accent); color: #000; }
+  #status, #pInfo { color: var(--muted); font-size: 15px; margin-top: 8px; min-height: 20px; }
+  .bad { color: var(--bad) !important; } .okc { color: var(--ok) !important; } .warnc { color: var(--warn) !important; }
+
+  /* route */
+  .path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; }
+  .chip { border-radius: 10px; padding: 6px 10px; background: #1c1c1c; border: 2px solid var(--line); font: 700 14px ui-monospace, Menlo, monospace; }
+  .chip.a { border-color: var(--hr); } .chip.b { border-color: var(--pick); } .chip.me { border-color: #38bdf8; }
+  .tbl-wrap { overflow-x: auto; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: left; vertical-align: middle; white-space: nowrap; }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; position: sticky; top: 0; background: var(--panel); }
+  td.code { font: 800 16px ui-monospace, Menlo, monospace; }
+  td.pt { font: 900 20px system-ui; text-align: center; }
+  tr.pa td.pt { color: var(--hr); } tr.pb td.pt { color: var(--pick); }
+  tr.me td { background: #071c2b; }
+  .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+  .t-hr { background: #052e16; color: #86efac; } .t-pick { background: #431407; color: #fdba74; } .t-other { background: #222; color: #ddd; }
+  .st-ok { color: var(--ok); } .st-fix { color: var(--warn); } .st-bad { color: var(--bad); }
+  td small { color: var(--muted); display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* print sheets */
+  #sheets { margin-top: 12px; }
+  .sheet-wrap { margin: 0 auto 14px; overflow: hidden; }
+  .sheet { width: 210mm; height: 297mm; background: #fff; position: relative; transform-origin: 0 0; color: #000; overflow: hidden; }
+  .label { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+  /* Cut marks only in the corners: a full outline crosses the scan line and confuses decoders. */
+  .label i { position: absolute; width: 1.2mm; height: 1.2mm; border: 0 solid #888; }
+  .label i:nth-of-type(1) { left: 0; top: 0; border-left-width: .2mm; border-top-width: .2mm; }
+  .label i:nth-of-type(2) { right: 0; top: 0; border-right-width: .2mm; border-top-width: .2mm; }
+  .label i:nth-of-type(3) { left: 0; bottom: 0; border-left-width: .2mm; border-bottom-width: .2mm; }
+  .label i:nth-of-type(4) { right: 0; bottom: 0; border-right-width: .2mm; border-bottom-width: .2mm; }
+  .label svg { display: block; }
+  .label .t { font: 700 3.2mm/1.1 ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+  .label .c { font: 600 2.4mm/1.1 system-ui, sans-serif; white-space: nowrap; color: #222; }
+  #full { position: fixed; inset: 0; z-index: 50; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; }
+  #full svg { width: 100%; height: auto; max-height: 75vh; }
+  #full p { color: #000; font: 700 18px ui-monospace, Menlo, monospace; margin: 8px 0 0; text-align: center; }
+
+  @media print {
+    @page { size: A4 portrait; margin: 0; }
+    html, body { background: #fff !important; }
+    .no-print, main > *:not(#printTab), #printTab > *:not(#sheets) { display: none !important; }
+    main { max-width: none; padding: 0; margin: 0; }
+    #printTab { display: block !important; }
+    #sheets { margin: 0; }
+    .sheet-wrap { width: auto !important; height: auto !important; margin: 0; overflow: visible; break-after: page; page-break-after: always; }
+    .sheet-wrap:last-child { break-after: auto; page-break-after: auto; }
+    .sheet { transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="tabs no-print" role="tablist">
+    <button id="tabRoute" role="tab" aria-selected="true" type="button">🗺 МАРШРУТ</button>
+    <button id="tabPrint" role="tab" aria-selected="false" type="button">🖨 ПЕЧАТЬ A4</button>
+  </div>
+
+  <!-- ═════════ ROUTE ═════════ -->
+  <section id="routeTab">
+    <div class="panel">
+      <div class="row">
+        <label class="btn primary" for="shot">🖼 СКРИНШОТ<input id="shot" type="file" accept="image/*" class="hidden"></label>
+        <button id="btnParse" type="button">↻ РАЗОБРАТЬ ТЕКСТ</button>
+      </div>
+      <label class="f" for="srcText" style="margin-top:10px">Текст из WMS (вставьте или поправьте после OCR); Ctrl+V картинки тоже работает</label>
+      <textarea id="srcText" spellcheck="false" placeholder="07.03.02.14.08.01   12 szt&#10;03.02.11.05.02.03   4 szt"></textarea>
+      <div class="row" style="margin-top:8px">
+        <div style="flex:3 1 220px"><label class="f" for="here">📍 Я здесь (локализация; пусто = начинаю с точки А)</label>
+          <input id="here" placeholder="07.01.01.01.04.01" spellcheck="false" autocomplete="off"></div>
+        <button id="btnHereClear" class="sm" type="button" style="flex:0 0 auto">✕</button>
+      </div>
+      <div id="status"></div>
+    </div>
+
+    <div id="routeOut" class="panel hidden">
+      <h2>Маршрут</h2>
+      <div id="path" class="path"></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Точка</th><th>Локализация</th><th>Тип</th><th>Сектор</th><th>Ряд</th><th>Секция</th><th>Уровень</th><th>Место</th><th>Кол-во / строка</th><th>Список</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnToPrint" type="button">🖨 ВСЕ В ПЕЧАТЬ</button>
+        <button id="btnCsv" type="button">⬇ CSV</button>
+      </div>
+    </div>
+
+    <details class="panel">
+      <summary style="cursor:pointer;color:var(--muted)">⚙ Приоритет зон и список локализаций</summary>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:2 1 260px"><label class="f" for="prio">Порядок префиксов: первый = точка А (ближняя), последний = точка Б</label>
+          <input id="prio" spellcheck="false"></div>
+        <div style="flex:2 1 260px"><label class="f" for="types">Названия зон (префикс=название через ;)</label>
+          <input id="types" spellcheck="false"></div>
+      </div>
+      <p id="locInfo" style="color:var(--muted);font-size:14px"></p>
+      <label class="btn sm" for="locFile">📄 Загрузить список локализаций (.txt, по одной в строке)<input id="locFile" type="file" accept=".txt,.csv,text/plain" multiple class="hidden"></label>
+    </details>
+  </section>
+
+  <!-- ═════════ PRINT ═════════ -->
+  <section id="printTab" class="hidden">
+    <div class="panel no-print">
+      <label class="f" for="pCodes">Коды для печати (по одному в строке)</label>
+      <textarea id="pCodes" spellcheck="false" placeholder="07.03.02.14.08.01&#10;224800"></textarea>
+      <div class="row" style="margin-top:8px">
+        <div><label class="f" for="pOne">Один код</label><input id="pOne" placeholder="224800" spellcheck="false"></div>
+        <button id="btnFill" type="button">× ЛИСТ ОДНИМ КОДОМ</button>
+        <div><label class="f" for="pFilter">Локализации по фильтру</label><input id="pFilter" placeholder="07.03.02.*" spellcheck="false"></div>
+        <button id="btnAddFilter" type="button">+ ДОБАВИТЬ</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label class="f" for="pCopies">Копий каждого</label><input id="pCopies" type="number" min="1" max="500" value="1"></div>
+        <div><label class="f" for="pSkip">Начать с ячейки</label><input id="pSkip" type="number" min="1" value="1"></div>
+        <div><label class="f" for="pPerPage">На листе (≈)</label><input id="pPerPage" type="number" min="1" max="200" value="32"></div>
+        <div><label class="f" for="pMode">Раскладка</label>
+          <select id="pMode"><option value="auto">Авто (лучшая читаемость)</option><option value="grid">Колонки × ряды</option><option value="size">По размеру этикетки</option></select></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="m-grid"><label class="f" for="pCols">Колонки</label><input id="pCols" type="number" min="1" max="12" value="4"></div>
+        <div class="m-grid"><label class="f" for="pRows">Ряды</label><input id="pRows" type="number" min="1" max="50" value="8"></div>
+        <div class="m-size"><label class="f" for="pW">Ширина, мм</label><input id="pW" type="number" min="15" max="200" step="0.5" value="48"></div>
+        <div class="m-size"><label class="f" for="pH">Высота, мм</label><input id="pH" type="number" min="8" max="290" step="0.5" value="34"></div>
+        <div><label class="f" for="pMargin">Поля, мм</label><input id="pMargin" type="number" min="0" max="30" step="0.5" value="6"></div>
+        <div><label class="f" for="pGap">Зазор, мм</label><input id="pGap" type="number" min="0" max="20" step="0.5" value="2"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="chk"><input id="pText" type="checkbox" checked> Текст кода</label>
+        <label class="chk"><input id="pCaption" type="checkbox" checked> Подпись (зона · ряд · уровень)</label>
+        <label class="chk"><input id="pCut" type="checkbox" checked> Метки реза (уголки)</label>
+      </div>
+      <div id="pInfo"></div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnPrint" class="primary" type="button">🖨 ПЕЧАТЬ / PDF</button>
+        <button id="btnClear" type="button">ОЧИСТИТЬ</button>
+      </div>
+    </div>
+    <div id="sheets"></div>
+  </section>
+</main>
+
+<div id="full" class="hidden no-print" role="dialog"><svg id="fullBc"></svg><p id="fullTxt"></p><p style="font:600 14px system-ui">Нажмите, чтобы закрыть</p></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+'use strict';
+const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js';
+const $ = (s) => document.querySelector(s);
+const pad = (n) => String(n).padStart(2, '0');
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('m13.loc.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('m13.loc.' + k, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
+};
+
+/* ═════════ Warehouse locations: exact description of the two source files ═════════
+   ZZ.SS.RR.KK.LL.MM = зона(префикс) . сектор . ряд . секция . уровень . место
+   • localizacii_18_prefixov.txt (64 800): зоны 03/13/23 × сектор 01–06 × ряд 01–20 × секция 01–09
+     × уровень 01–05 × место 01–04 — полный перебор.
+   • localizacii_iz_tablitsy_07.txt (3 765): зона 07 (highrack), «сектор.ряд: секции» ниже
+     × уровень 04–08 × место 01–03.
+   Expanding these rules gives exactly the lines of both files (checked when building the tool). */
+const PICK_ZONES = ['03', '13', '23'];
+const HR_ROWS = '01.01:1-12 01.02:1-12 01.03:2-12 01.04:3-12 01.05:1-12 01.06:1-12 02.07:4-12 02.08:4-12 02.09:9-12 02.10:9-12 ' +
+  '03.01:14-26 03.02:14-26 03.03:14-26 03.04:14-26 03.05:14-26 03.06:14-26 04.07:14-26 04.08:14-26 04.09:14-26 04.10:14-26 04.11:14-26 04.12:14-26';
+const HR = new Map(HR_ROWS.split(' ').map((s) => {
+  const [key, ranges] = s.split(':');
+  return [key, ranges.split(',').map((r) => r.split('-').map(Number)).map(([a, b = a]) => [a, b])];
+}));
+const extraLocs = new Set(store.get('extra', []));
+
+const inRange = (v, a, b) => v >= a && v <= b;
+function isKnownLoc(code) {
+  const s = code.split('.');
+  if (s.length !== 6 || s.some((x) => !/^\d\d$/.test(x))) return false;
+  const [z, a, r, k, l, m] = s.map(Number);
+  if (PICK_ZONES.includes(s[0]) && inRange(a, 1, 6) && inRange(r, 1, 20) && inRange(k, 1, 9) && inRange(l, 1, 5) && inRange(m, 1, 4)) return true;
+  if (z === 7) {
+    const ranges = HR.get(`${s[1]}.${s[2]}`);
+    if (ranges && ranges.some(([f, t]) => inRange(k, f, t)) && inRange(l, 4, 8) && inRange(m, 1, 3)) return true;
+  }
+  return extraLocs.has(code);
+}
+function* allLocs() {
+  for (const z of PICK_ZONES)
+    for (let a = 1; a <= 6; a++) for (let r = 1; r <= 20; r++) for (let k = 1; k <= 9; k++)
+      for (let l = 1; l <= 5; l++) for (let m = 1; m <= 4; m++) yield `${z}.${pad(a)}.${pad(r)}.${pad(k)}.${pad(l)}.${pad(m)}`;
+  for (const [key, ranges] of HR)
+    for (const [f, t] of ranges) for (let k = f; k <= t; k++)
+      for (let l = 4; l <= 8; l++) for (let m = 1; m <= 3; m++) yield `07.${key}.${pad(k)}.${pad(l)}.${pad(m)}`;
+  for (const c of extraLocs) yield c;
+}
+
+/* ═════════ Zones & priority ═════════ */
+
+const DEFAULT_PRIO = '07,06,05,04,03,13,23';
+const DEFAULT_TYPES = '07=Highrack;03=Picking / Inventory;13=Picking / Inventory;23=Picking / Inventory';
+let prio = [], typeNames = {};
+function loadZoneSettings() {
+  $('#prio').value = store.get('prio', DEFAULT_PRIO);
+  $('#types').value = store.get('types', DEFAULT_TYPES);
+  applyZoneSettings();
+}
+function applyZoneSettings() {
+  prio = $('#prio').value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean).map((s) => pad(+s));
+  typeNames = Object.fromEntries($('#types').value.split(';').map((p) => p.split('=').map((x) => x.trim())).filter((p) => p.length === 2 && p[0]).map(([k, v]) => [pad(+k), v]));
+  store.set('prio', $('#prio').value);
+  store.set('types', $('#types').value);
+}
+const zoneName = (z) => typeNames[z] || `Зона ${z}`;
+const zoneClass = (z) => (/high/i.test(zoneName(z)) ? 't-hr' : /pick|invent/i.test(zoneName(z)) ? 't-pick' : 't-other');
+const tierOf = (z) => { const i = prio.indexOf(z); return i < 0 ? prio.length + Number(z) / 100 : i; };
+
+/** Rough walking distance between two locations (no warehouse map: estimated from the code hierarchy). */
+function distance(a, b) {
+  if (!a || !b) return 0;
+  return (a[0] !== b[0] ? 1e5 : 0) + Math.abs(a[1] - b[1]) * 1000 + Math.abs(a[2] - b[2]) * 50 + Math.abs(a[3] - b[3]) * 2 + Math.abs(a[4] - b[4]) * 0.5 + Math.abs(a[5] - b[5]) * 0.1;
+}
+const segs = (code) => code.split('.').map(Number);
+
+/* ═════════ Parsing text (OCR or pasted) ═════════ */
+
+const D = '[0-9OoIlSB]';
+const SEPR = '\\s*[.,:;·]\\s*';
+const LOC_RE = new RegExp(`(?<![0-9A-Za-z])(${D}{2})${SEPR}(${D}{2})${SEPR}(${D}{2})${SEPR}(${D}{2})${SEPR}(${D}{2})${SEPR}(${D}{2})(?![0-9])`, 'g');
+const LOC_BARE = /(?<![0-9])(\d{12})(?![0-9])/g; // scanned without dots: 070302140801
+const FIX = { O: '0', o: '0', I: '1', l: '1', S: '5', B: '8' };
+const fixDigits = (s) => s.replace(/[OoIlSB]/g, (c) => FIX[c]);
+
+/** A single misread digit: return the only known location one digit away, if exactly one exists. */
+function correct(code) {
+  const digits = code.replace(/\./g, '');
+  const hits = new Set();
+  for (let i = 0; i < 12; i++) for (let d = 0; d <= 9; d++) {
+    if (String(d) === digits[i]) continue;
+    const v = digits.slice(0, i) + d + digits.slice(i + 1);
+    const c = v.match(/../g).join('.');
+    if (isKnownLoc(c)) hits.add(c);
+    if (hits.size > 1) return null;
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
+function parseText(text) {
+  const found = new Map();
+  const add = (code, status, from, line, rest) => {
+    const prev = found.get(code);
+    if (prev) { prev.count++; return; }
+    const qty = (rest.match(/(?<![\d.,/:])\d{1,5}(?![\d.,/:])/) || [])[0];
+    found.set(code, { code, status, from, line: line.trim(), rest: rest.trim(), qty: qty ? Number(qty) : null, count: 1 });
+  };
+  for (const line of String(text).split(/\r?\n/)) {
+    for (const re of [LOC_RE, LOC_BARE]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(line))) {
+        const raw = m.length > 2 ? m.slice(1, 7).map(fixDigits).join('.') : m[1].match(/../g).join('.');
+        if (m.length <= 2 && !isKnownLoc(raw)) continue; // bare 12 digits only when it is a real location
+        const rest = line.slice(m.index + m[0].length);
+        if (isKnownLoc(raw)) add(raw, 'ok', raw, line, rest);
+        else {
+          const fixed = correct(raw);
+          if (fixed) add(fixed, 'fix', raw, line, rest);
+          else add(raw, 'bad', raw, line, rest);
+        }
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+/* ═════════ Route ═════════ */
+
+let lastRoute = [];
+/** Known locations ordered by zone priority, nearest-next inside a zone; unknown codes go last. */
+function buildRoute(items, hereCode) {
+  const tiers = new Map();
+  for (const it of items.filter((x) => x.status !== 'bad')) {
+    const z = it.code.slice(0, 2);
+    if (!tiers.has(tierOf(z))) tiers.set(tierOf(z), []);
+    tiers.get(tierOf(z)).push(it);
+  }
+  const order = [];
+  let pos = hereCode && /^\d\d(\.\d\d){5}$/.test(hereCode) ? segs(hereCode) : null;
+  for (const t of [...tiers.keys()].sort((a, b) => a - b)) {
+    const left = tiers.get(t).slice().sort((a, b) => a.code.localeCompare(b.code));
+    while (left.length) { // nearest next location inside the zone
+      let best = 0;
+      if (pos) left.forEach((it, i) => { if (distance(pos, segs(it.code)) < distance(pos, segs(left[best].code))) best = i; });
+      const it = left.splice(best, 1)[0];
+      order.push(it);
+      pos = segs(it.code);
+    }
+  }
+  return [...order, ...items.filter((x) => x.status === 'bad')];
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c instanceof Node ? c : document.createTextNode(c));
+  return e;
+}
+
+function describe(code) {
+  const [z, a, r, k, l, m] = code.split('.');
+  return { z, a, r, k, l, m, type: zoneName(z) };
+}
+
+function renderRoute() {
+  applyZoneSettings();
+  const items = parseText($('#srcText').value);
+  const here = $('#here').value.trim();
+  if (!items.length) {
+    $('#routeOut').classList.add('hidden');
+    status($('#srcText').value.trim() ? 'Локализации в тексте не найдены (формат 07.03.02.14.08.01).' : '', $('#srcText').value.trim() ? 'bad' : '');
+    return;
+  }
+  const route = buildRoute(items, here);
+  lastRoute = route;
+  const n = route.filter((r) => r.status !== 'bad').length; // A…Б only over real locations
+  const label = (i) => (i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'Б' : String(i + 1));
+  const bad = route.filter((r) => r.status === 'bad').length;
+  const fixed = route.filter((r) => r.status === 'fix').length;
+  status(`Найдено локализаций: ${route.length}${fixed ? ` · исправлено OCR: ${fixed}` : ''}${bad ? ` · нет в списке склада: ${bad}` : ''}`, bad ? 'warnc' : 'okc');
+
+  const chips = [];
+  if (here) chips.push(el('span', { class: 'chip me' }, `📍 ${here}`), ' → ');
+  route.forEach((it, i) => {
+    if (i >= n) return;
+    chips.push(el('span', { class: 'chip' + (i === 0 ? ' a' : i === n - 1 ? ' b' : '') }, `${label(i)}: ${it.code}`));
+    if (i < n - 1) chips.push(' → ');
+  });
+  $('#path').replaceChildren(...chips);
+
+  $('#rows').replaceChildren(...route.map((it, i) => {
+    const d = describe(it.code);
+    const st = it.status === 'ok' ? ['st-ok', '✓ есть'] : it.status === 'fix' ? ['st-fix', `✎ OCR: ${it.from}`] : ['st-bad', '⚠ нет в списке'];
+    return el('tr', { class: (i === 0 && i < n ? 'pa' : i === n - 1 ? 'pb' : '') + (it.code === here ? ' me' : '') },
+      el('td', { class: 'pt' }, label(i)),
+      el('td', { class: 'code' }, it.code),
+      el('td', {}, el('span', { class: `badge ${zoneClass(d.z)}` }, `${d.z} · ${d.type}`)),
+      el('td', {}, d.a), el('td', {}, d.r), el('td', {}, d.k), el('td', {}, d.l), el('td', {}, d.m),
+      el('td', {}, it.qty != null ? String(it.qty) : '—', el('small', { title: it.line }, it.rest || '')),
+      el('td', { class: st[0] }, st[1] + (it.count > 1 ? ` ×${it.count}` : '')),
+      el('td', {},
+        el('button', { class: 'sm', type: 'button', title: 'Я здесь', onclick: () => { $('#here').value = it.code; renderRoute(); } }, '📍'), ' ',
+        el('button', { class: 'sm', type: 'button', title: 'Штрих-код', onclick: () => showFull(it.code) }, '║'), ' ',
+        el('button', { class: 'sm', type: 'button', title: 'В печать', onclick: () => addToPrint([it.code]) }, '🖨')));
+  }));
+  $('#routeOut').classList.remove('hidden');
+}
+
+function status(t, cls = '') { $('#status').textContent = t; $('#status').className = cls; }
+
+/* ═════════ Screenshot OCR ═════════ */
+
+const scripts = {};
+function loadScript(url, name) {
+  if (window[name]) return Promise.resolve(window[name]);
+  return (scripts[url] ??= new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = () => ok(window[name]);
+    s.onerror = () => { delete scripts[url]; fail(new Error(`${name} не загрузился (нет интернета?)`)); };
+    document.head.append(s);
+  }));
+}
+let ocr = null;
+const getOcr = (onProgress) => (ocr ??= loadScript(TESSERACT_URL, 'Tesseract')
+  .then((T) => T.createWorker('eng', 1, { logger: (m) => m.status === 'recognizing text' && onProgress?.(m.progress) }))
+  .catch((e) => { ocr = null; throw e; }));
+
+/** Screenshots: upscale small ones, grayscale, invert dark themes. */
+function prepShot(img) {
+  const k = img.width < 1600 ? Math.min(3, 1800 / img.width) : 1;
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * k);
+  c.height = Math.round(img.height * k);
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(img, 0, 0, c.width, c.height);
+  const im = x.getImageData(0, 0, c.width, c.height), d = im.data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) { const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = g; sum += g; }
+  const invert = sum / (d.length / 4) < 110;
+  for (let i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = invert ? 255 - d[i] : d[i];
+  x.putImageData(im, 0, 0);
+  return c;
+}
+
+let busy = false;
+async function readShot(file) {
+  if (busy) return;
+  busy = true;
+  try {
+    status('Открываю скриншот…');
+    const bmp = await createImageBitmap(file);
+    const img = prepShot(bmp);
+    status('Распознаю текст… (первый раз загружается OCR-модель)');
+    const w = await getOcr((p) => status(`Распознаю текст… ${Math.round(p * 100)}%`));
+    await w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); // table rows stay rows
+    let { data } = await w.recognize(img);
+    let text = data.text;
+    if (!parseText(text).length) { // unusual layout: try sparse text mode
+      await w.setParameters({ tessedit_pageseg_mode: '11' });
+      ({ data } = await w.recognize(img));
+      text = data.text;
+    }
+    $('#srcText').value = text.trim();
+    renderRoute();
+  } catch (err) {
+    status(`Не удалось прочитать скриншот: ${err.message || err}`, 'bad');
+  } finally {
+    busy = false;
+  }
+}
+
+/* ═════════ Barcodes ═════════ */
+
+const isCode128 = (s) => /^[\x20-\x7e]+$/.test(s);
+function barcodeSvg(code, opts = {}) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  JsBarcode(svg, code, { format: 'CODE128', width: 2, height: 100, margin: 0, displayValue: false, background: '#ffffff', lineColor: '#000000', ...opts });
+  const w = parseFloat(svg.getAttribute('width')), h = parseFloat(svg.getAttribute('height'));
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.removeAttribute('style');
+  return svg;
+}
+const moduleCache = new Map();
+/** Number of Code-128 modules (narrowest bar units) of a value. */
+function modules(code) {
+  if (!moduleCache.has(code)) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svg, code, { format: 'CODE128', width: 1, margin: 0, displayValue: false });
+    moduleCache.set(code, parseFloat(svg.getAttribute('width')));
+  }
+  return moduleCache.get(code);
+}
+
+function showFull(code) {
+  const svg = $('#fullBc');
+  JsBarcode(svg, code, { format: 'CODE128', width: 4, height: 200, margin: 20, displayValue: false });
+  svg.setAttribute('viewBox', `0 0 ${parseFloat(svg.getAttribute('width'))} ${parseFloat(svg.getAttribute('height'))}`);
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  const d = /^\d\d(\.\d\d){5}$/.test(code) ? describe(code) : null;
+  $('#fullTxt').textContent = d ? `${code}\n${d.type} · сектор ${d.a} · ряд ${d.r} · секция ${d.k} · уровень ${d.l} · место ${d.m}` : code;
+  $('#full').classList.remove('hidden');
+}
+$('#full').addEventListener('click', () => $('#full').classList.add('hidden'));
+
+/* ═════════ A4 sheet layout ═════════ */
+
+const PAGE_W = 210, PAGE_H = 297, PAD = 1.5, TEXT_H = 3.8, CAPTION_H = 3.0, MIN_X = 0.25;
+
+function caption(code) {
+  if (!/^\d\d(\.\d\d){5}$/.test(code)) return '';
+  const d = describe(code);
+  return `${d.type} · С${d.a} Р${d.r} К${d.k} У${d.l} М${d.m}`;
+}
+
+/** Geometry of one label: barcode area, module width (mm) and bar height (mm). */
+function labelGeometry(w, h, maxModules, withText, withCaption) {
+  const barH = h - 2 * PAD - (withText ? TEXT_H : 0) - (withCaption ? CAPTION_H : 0);
+  const x = (w - 2 * PAD) / (maxModules + 20); // + 10-module quiet zone each side
+  return { w, h, barH, x };
+}
+
+/**
+ * Choose the grid. auto: among cols×rows that hold ≈perPage labels, take the one with the best
+ * worst-case readability (module width vs 0.33 mm, bar height vs 6 mm).
+ */
+function computeLayout(opts, maxModules) {
+  const { mode, perPage, margin, gap, withText, withCaption } = opts;
+  const usableW = PAGE_W - 2 * margin, usableH = PAGE_H - 2 * margin;
+  const grid = (cols, rows) => {
+    const w = (usableW - (cols - 1) * gap) / cols, h = (usableH - (rows - 1) * gap) / rows;
+    return { cols, rows, ...labelGeometry(w, h, maxModules, withText, withCaption) };
+  };
+  if (mode === 'grid') return grid(opts.cols, opts.rows);
+  if (mode === 'size') {
+    const cols = Math.max(1, Math.floor((usableW + gap) / (opts.w + gap)));
+    const rows = Math.max(1, Math.floor((usableH + gap) / (opts.h + gap)));
+    return { cols, rows, ...labelGeometry(opts.w, opts.h, maxModules, withText, withCaption) };
+  }
+  let best = null;
+  for (let cols = 1; cols <= 8; cols++) {
+    const rows = Math.ceil(perPage / cols);
+    if (rows > 60) continue;
+    const g = grid(cols, rows);
+    // Thin bars are what fails on a scanner; 6 mm of bar height is enough for handhelds.
+    const score = Math.min(g.x / 0.33, g.barH / 6) * (cols * rows === perPage ? 1.05 : 1);
+    const waste = cols * rows - perPage;
+    if (g.barH > 3 && (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) < 1e-9 && waste < best.waste))) best = { ...g, score, waste };
+  }
+  return best || grid(4, Math.ceil(perPage / 4));
+}
+
+function printOptions() {
+  const num = (id, d) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : d; };
+  return {
+    mode: $('#pMode').value,
+    perPage: Math.max(1, Math.round(num('#pPerPage', 32))),
+    cols: Math.max(1, Math.round(num('#pCols', 4))), rows: Math.max(1, Math.round(num('#pRows', 8))),
+    w: num('#pW', 48), h: num('#pH', 34),
+    margin: num('#pMargin', 6), gap: num('#pGap', 2),
+    copies: Math.max(1, Math.round(num('#pCopies', 1))), skip: Math.max(1, Math.round(num('#pSkip', 1))) - 1,
+    withText: $('#pText').checked, withCaption: $('#pCaption').checked, cut: $('#pCut').checked,
+  };
+}
+
+const MAX_LABELS = 3200;
+function renderSheets() {
+  const o = printOptions();
+  ['#pMode', '#pPerPage', '#pCols', '#pRows', '#pW', '#pH', '#pMargin', '#pGap', '#pCopies', '#pSkip'].forEach((id) => store.set('p' + id, $(id).value));
+  ['#pText', '#pCaption', '#pCut'].forEach((id) => store.set('p' + id, $(id).checked));
+  store.set('codes', $('#pCodes').value);
+  document.querySelectorAll('.m-grid').forEach((e) => e.classList.toggle('hidden', o.mode !== 'grid'));
+  document.querySelectorAll('.m-size').forEach((e) => e.classList.toggle('hidden', o.mode !== 'size'));
+  $('#pPerPage').parentElement.classList.toggle('hidden', o.mode !== 'auto');
+
+  const codes = $('#pCodes').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const bad = codes.filter((c) => !isCode128(c));
+  const good = codes.filter(isCode128);
+  const cells = [...Array(o.skip).fill(null), ...good.flatMap((c) => Array(o.copies).fill(c))];
+  if (!good.length) {
+    $('#sheets').replaceChildren();
+    $('#pInfo').textContent = bad.length ? `Не подходит для Code-128 (только ASCII): ${bad.slice(0, 3).join(', ')}` : 'Добавьте коды для печати.';
+    $('#pInfo').className = bad.length ? 'bad' : '';
+    return;
+  }
+  const maxMod = Math.max(...good.map(modules));
+  const L = computeLayout(o, maxMod);
+  const perSheet = L.cols * L.rows;
+  const shown = cells.slice(0, MAX_LABELS);
+  const pages = Math.ceil(shown.length / perSheet);
+  const xOk = L.x >= MIN_X, hOk = L.barH >= 6;
+  const info = $('#pInfo');
+  info.className = xOk && hOk ? 'okc' : 'warnc';
+  info.textContent = `Сетка ${L.cols}×${L.rows} = ${perSheet} на лист · этикетка ${L.w.toFixed(1)}×${L.h.toFixed(1)} мм · ` +
+    `штрих ${L.x.toFixed(2)} мм${xOk ? ' ✓' : ' ⚠ тонко (<0.25), меньше колонок или шире этикетка'} · высота штрихов ${L.barH.toFixed(1)} мм${hOk ? '' : ' ⚠ низко'} · ` +
+    `этикеток ${shown.length}, листов ${pages}${cells.length > MAX_LABELS ? ` (показано первые ${MAX_LABELS})` : ''}${bad.length ? ` · пропущено не-ASCII: ${bad.length}` : ''}`;
+
+  const usableW = PAGE_W - 2 * o.margin;
+  const gapX = L.cols > 1 ? Math.max(0, (usableW - L.cols * L.w) / (L.cols - 1)) : 0;
+  const usableH = PAGE_H - 2 * o.margin;
+  const gapY = L.rows > 1 ? Math.max(0, (usableH - L.rows * L.h) / (L.rows - 1)) : 0;
+  const svgCache = new Map();
+  const barW = L.x * maxMod; // same module width for every code on the sheet
+  const sheetPx = $('#sheets').clientWidth || 360;
+  const scale = Math.min(1, (sheetPx - 4) / (PAGE_W * 96 / 25.4));
+  const frag = document.createDocumentFragment();
+  for (let p = 0; p < pages; p++) {
+    const sheet = el('div', { class: 'sheet', style: `transform: scale(${scale})` });
+    for (let i = 0; i < perSheet; i++) {
+      const code = shown[p * perSheet + i];
+      if (code === undefined) break;
+      const col = i % L.cols, row = Math.floor(i / L.cols);
+      const box = el('div', { class: 'label',
+        style: `left:${o.margin + col * (L.w + gapX)}mm;top:${o.margin + row * (L.h + gapY)}mm;width:${L.w}mm;height:${L.h}mm` });
+      if (code) {
+        if (!svgCache.has(code)) svgCache.set(code, barcodeSvg(code));
+        const svg = svgCache.get(code).cloneNode(true);
+        // Keep the module width identical across codes: shorter codes get a proportionally narrower symbol.
+        svg.style.width = `${(barW * modules(code)) / maxMod}mm`;
+        svg.style.height = `${Math.max(2, L.barH)}mm`;
+        box.append(svg);
+        if (o.withText) box.append(el('div', { class: 't' }, code));
+        const cap = o.withCaption ? caption(code) : '';
+        if (o.withCaption) box.append(el('div', { class: 'c' }, cap || '\u00a0'));
+      }
+      if (o.cut) box.append(el('i'), el('i'), el('i'), el('i'));
+      sheet.append(box);
+    }
+    const wrap = el('div', { class: 'sheet-wrap', style: `width:${PAGE_W * 96 / 25.4 * scale}px;height:${PAGE_H * 96 / 25.4 * scale}px` });
+    wrap.append(sheet);
+    frag.append(wrap);
+  }
+  $('#sheets').replaceChildren(frag);
+}
+
+function addToPrint(list) {
+  const cur = $('#pCodes').value.trim();
+  $('#pCodes').value = [cur, ...list].filter(Boolean).join('\n');
+  showTab('print');
+  renderSheets();
+}
+
+/* ═════════ Tabs & events ═════════ */
+
+function showTab(name) {
+  $('#routeTab').classList.toggle('hidden', name !== 'route');
+  $('#printTab').classList.toggle('hidden', name !== 'print');
+  $('#tabRoute').setAttribute('aria-selected', String(name === 'route'));
+  $('#tabPrint').setAttribute('aria-selected', String(name === 'print'));
+  if (name === 'print') renderSheets();
+}
+$('#tabRoute').addEventListener('click', () => showTab('route'));
+$('#tabPrint').addEventListener('click', () => showTab('print'));
+
+$('#shot').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) readShot(f); });
+document.addEventListener('paste', (e) => {
+  const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/'));
+  if (f) { e.preventDefault(); showTab('route'); readShot(f); }
+});
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'));
+  if (f) { e.preventDefault(); showTab('route'); readShot(f); }
+});
+let parseTimer;
+$('#srcText').addEventListener('input', () => { clearTimeout(parseTimer); parseTimer = setTimeout(renderRoute, 300); });
+$('#btnParse').addEventListener('click', renderRoute);
+$('#here').addEventListener('change', () => { store.set('here', $('#here').value.trim()); renderRoute(); });
+$('#btnHereClear').addEventListener('click', () => { $('#here').value = ''; store.set('here', ''); renderRoute(); });
+$('#prio').addEventListener('change', renderRoute);
+$('#types').addEventListener('change', renderRoute);
+$('#btnToPrint').addEventListener('click', () => addToPrint(lastRoute.map((r) => r.code)));
+$('#btnCsv').addEventListener('click', () => {
+  const head = ['point', 'location', 'zone', 'type', 'sector', 'row', 'section', 'level', 'place', 'qty', 'status', 'line'];
+  const n = lastRoute.filter((r) => r.status !== 'bad').length;
+  const rows = lastRoute.map((it, i) => { const d = describe(it.code); return [i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'B' : i + 1, it.code, d.z, d.type, d.a, d.r, d.k, d.l, d.m, it.qty ?? '', it.status, it.line]; });
+  const csv = '﻿' + [head, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+  const a = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'trasa-m13.csv' });
+  document.body.append(a); a.click(); a.remove();
+});
+
+$('#locFile').addEventListener('change', async (e) => {
+  let added = 0;
+  for (const f of e.target.files) {
+    for (const line of (await f.text()).split(/\r?\n/)) {
+      const c = line.trim();
+      if (/^\d\d(\.\d\d){5}$/.test(c) && !isKnownLoc(c)) { extraLocs.add(c); added++; }
+    }
+  }
+  e.target.value = '';
+  store.set('extra', [...extraLocs]);
+  locInfo(`Добавлено новых локализаций: ${added}.`);
+  renderRoute();
+});
+function locInfo(extra = '') {
+  const base = 64800 + 3765;
+  $('#locInfo').textContent = `Список склада: ${base} локализаций (зоны 03/13/23: 64 800, highrack 07: 3 765)` +
+    (extraLocs.size ? ` + загружено ${extraLocs.size}` : '') + '. ' + extra;
+}
+
+for (const id of ['#pCodes', '#pMode', '#pPerPage', '#pCols', '#pRows', '#pW', '#pH', '#pMargin', '#pGap', '#pCopies', '#pSkip', '#pText', '#pCaption', '#pCut']) {
+  $(id).addEventListener(id === '#pCodes' ? 'input' : 'change', () => { clearTimeout(parseTimer); parseTimer = setTimeout(renderSheets, 250); });
+}
+$('#btnFill').addEventListener('click', () => {
+  const v = $('#pOne').value.trim();
+  if (!v) return;
+  $('#pCodes').value = v;
+  $('#pCopies').value = String(computeLayout(printOptions(), modules(v)).cols * computeLayout(printOptions(), modules(v)).rows);
+  renderSheets();
+});
+$('#btnAddFilter').addEventListener('click', () => {
+  const f = $('#pFilter').value.trim().replace(/\*+$/, '');
+  if (!f) return;
+  const list = [];
+  for (const c of allLocs()) if (c.startsWith(f)) { list.push(c); if (list.length >= MAX_LABELS) break; }
+  $('#pInfo').textContent = list.length ? '' : 'По фильтру ничего не найдено.';
+  if (list.length) addToPrint(list);
+});
+$('#btnClear').addEventListener('click', () => { $('#pCodes').value = ''; renderSheets(); });
+$('#btnPrint').addEventListener('click', () => { renderSheets(); window.print(); });
+window.addEventListener('resize', () => { if (!$('#printTab').classList.contains('hidden')) renderSheets(); });
+
+/* ═════════ Start ═════════ */
+
+loadZoneSettings();
+locInfo();
+$('#here').value = store.get('here', '');
+for (const id of ['#pMode', '#pPerPage', '#pCols', '#pRows', '#pW', '#pH', '#pMargin', '#pGap', '#pCopies', '#pSkip']) { const v = store.get('p' + id, null); if (v !== null) $(id).value = v; }
+for (const id of ['#pText', '#pCaption', '#pCut']) { const v = store.get('p' + id, null); if (v !== null) $(id).checked = v; }
+$('#pCodes').value = store.get('codes', '');
+// From the scanner tool: locations.html#print=224800 → one code, a full sheet.
+const hash = new URLSearchParams(location.hash.slice(1));
+if (hash.get('print')) {
+  $('#pOne').value = hash.get('print');
+  showTab('print');
+  $('#btnFill').click();
+} else {
+  showTab('route');
+}
+
+window.M13L = { parseText, buildRoute, isKnownLoc, allLocs, computeLayout, modules, correct };
+</script>
+</body>
+</html>

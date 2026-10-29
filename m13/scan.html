@@ -11,6 +11,7 @@
   3. Большой Code-128 готов. Кнопки:
      «НА ВЕСЬ ЭКРАН»: показать сканеру; «AUTODOC»: проверить номер на autodoc.pl;
      «ДРУГОЙ КОД»: выбрать другой найденный код или ввести вручную; «СЛЕДУЮЩИЙ»: новый товар.
+     «A4 ×32»: лист этикеток с этим кодом; «ЛОКАЦИИ»: маршрут по скриншоту WMS (файл locations.html рядом).
   «ФОТО»: если камера не запускается (нужен https) или текст мелкий, сфотографируйте этикетку.
   При первом открытии нужен интернет (библиотеки + OCR-модель ~5 МБ, дальше из кэша).
 -->
@@ -96,6 +97,10 @@
     <div class="row" style="margin-top:8px">
       <button id="btnAutodoc" type="button">🔎 AUTODOC</button>
       <button id="btnOther" type="button">✎ ДРУГОЙ КОД</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnA4" type="button">🖨 A4 ×32</button>
+      <button id="btnLoc" type="button">🗺 ЛОКАЦИИ</button>
     </div>
     <div class="row" style="margin-top:8px">
       <button id="btnNext" class="primary" type="button">▶ СЛЕДУЮЩИЙ</button>
@@ -634,6 +639,9 @@ $('#btnAutodoc').addEventListener('click', () => {
   const code = current();
   if (code) window.open(AUTODOC_SEARCH + encodeURIComponent(code), '_blank', 'noopener');
 });
+// Companion tool in the same folder: A4 sheet of labels and location routes.
+$('#btnA4').addEventListener('click', () => { const code = current(); if (code) window.open(`locations.html#print=${encodeURIComponent(code)}`, '_blank'); });
+$('#btnLoc').addEventListener('click', () => window.open('locations.html', '_blank'));
 $('#btnOther').addEventListener('click', () => {
   $('#other').classList.toggle('hidden');
   if (!$('#other').classList.contains('hidden')) $('#other').scrollIntoView({ behavior: 'smooth', block: 'start' });
