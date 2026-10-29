@@ -7,9 +7,11 @@
      или вставьте текст из WMS в поле. Найдутся все коды вида 07.03.02.14.08.01.
   2. Каждая локализация проверяется по полному списку склада (файлы «18 префиксов» и «07»)
      и раскладывается: зона · сектор · ряд · секция · уровень · место.
-  3. Порядок обхода по приоритету префиксов (по умолчанию 07 → … → 03): точка А = highrack
-     (ближняя), точка Б = picking/inventory (дальняя). «Я здесь» задаёт вашу позицию: внутри
-     одной зоны точки идут от ближайшей к вам.
+  3. Порядок обхода строгий, «змейкой» по секторам основных зон:
+     03.06 → 03.04 → 03.02 → 13.06 → 13.04 → 13.02 → 23.06 → 23.04 → 23.02 → 23.05 → 23.03 → 23.01
+     → 13.03 → 13.01 → 03.03 → 03.01, и только потом highrack 07. Внутри сектора точки идут от
+     ближайшей («Я здесь» задаёт вашу позицию). Порядок меняется в настройках.
+     Колонки Article ID и Кол-во можно править: правки привязаны к локализации и сохраняются.
   ПЕЧАТЬ A4
   4. Коды для печати: из таблицы, по фильтру (напр. 07.03.*) или один код × 32 на лист.
      Сетку (≈32 на лист) инструмент подбирает сам так, чтобы штрих-код читался лучше всего;
@@ -55,14 +57,18 @@
   /* route */
   .path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; }
   .chip { border-radius: 10px; padding: 6px 10px; background: #1c1c1c; border: 2px solid var(--line); font: 700 14px ui-monospace, Menlo, monospace; }
-  .chip.a { border-color: var(--hr); } .chip.b { border-color: var(--pick); } .chip.me { border-color: #38bdf8; }
+  .chip.hr { border-color: var(--hr); } .chip.pick { border-color: var(--pick); } .chip.me { border-color: #38bdf8; }
+  .chip.end { box-shadow: 0 0 0 2px var(--accent); }
   .tbl-wrap { overflow-x: auto; margin-top: 10px; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: left; vertical-align: middle; white-space: nowrap; }
   th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; position: sticky; top: 0; background: var(--panel); }
   td.code { font: 800 16px ui-monospace, Menlo, monospace; }
   td.pt { font: 900 20px system-ui; text-align: center; }
-  tr.pa td.pt { color: var(--hr); } tr.pb td.pt { color: var(--pick); }
+  tr.pa td.pt, tr.pb td.pt { color: var(--accent); }
+  td input.cell { width: 130px; padding: 6px 8px; font-size: 15px; border-radius: 8px; }
+  td input.cell.qty { width: 82px; }
+  td input.cell.edited { border-color: #a855f7; }
   tr.me td { background: #071c2b; }
   .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
   .t-hr { background: #052e16; color: #86efac; } .t-pick { background: #431407; color: #fdba74; } .t-other { background: #222; color: #ddd; }
@@ -128,7 +134,7 @@
       <h2>Маршрут</h2>
       <div id="path" class="path"></div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Точка</th><th>Локализация</th><th>Тип</th><th>Сектор</th><th>Ряд</th><th>Секция</th><th>Уровень</th><th>Место</th><th>Кол-во / строка</th><th>Список</th><th></th></tr></thead>
+        <thead><tr><th>Точка</th><th>Локализация</th><th>Тип</th><th>Сектор</th><th>Ряд</th><th>Секция</th><th>Уровень</th><th>Место</th><th>Article ID</th><th>Кол-во</th><th>Строка WMS</th><th>Список</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
       <div class="row" style="margin-top:10px">
@@ -140,12 +146,16 @@
     <details class="panel">
       <summary style="cursor:pointer;color:var(--muted)">⚙ Приоритет зон и список локализаций</summary>
       <div class="row" style="margin-top:10px">
-        <div style="flex:2 1 260px"><label class="f" for="prio">Порядок префиксов: первый = точка А (ближняя), последний = точка Б</label>
-          <input id="prio" spellcheck="false"></div>
+        <div style="flex:3 1 320px"><label class="f" for="order">Порядок обхода: сектор зоны (ZZ.SS) или вся зона (ZZ), через запятую</label>
+          <input id="order" spellcheck="false"></div>
         <div style="flex:2 1 260px"><label class="f" for="types">Названия зон (префикс=название через ;)</label>
           <input id="types" spellcheck="false"></div>
       </div>
       <p id="locInfo" style="color:var(--muted);font-size:14px"></p>
+      <div class="row" style="margin-bottom:8px">
+        <button id="btnOrderReset" class="sm" type="button" style="flex:0 0 auto">↺ Порядок по умолчанию</button>
+        <button id="btnOverridesReset" class="sm" type="button" style="flex:0 0 auto">✕ Сбросить правки Article ID / Кол-во</button>
+      </div>
       <label class="btn sm" for="locFile">📄 Загрузить список локализаций (.txt, по одной в строке)<input id="locFile" type="file" accept=".txt,.csv,text/plain" multiple class="hidden"></label>
     </details>
   </section>
@@ -244,23 +254,53 @@ function* allLocs() {
 
 /* ═════════ Zones & priority ═════════ */
 
-const DEFAULT_PRIO = '07,06,05,04,03,13,23';
+// Strict walking order of the main sectors: a snake through the floors, then highrack 07.
+const SECTOR_ORDER = ['03.06', '03.04', '03.02', '13.06', '13.04', '13.02', '23.06', '23.04', '23.02',
+  '23.05', '23.03', '23.01', '13.03', '13.01', '03.03', '03.01'];
+const DEFAULT_PRIO = '03,13,23,07'; // zone order for sectors missing from the route order
+const DEFAULT_ORDER = [...SECTOR_ORDER, '07'].join(', ');
 const DEFAULT_TYPES = '07=Highrack;03=Picking / Inventory;13=Picking / Inventory;23=Picking / Inventory';
-let prio = [], typeNames = {};
+const prio = DEFAULT_PRIO.split(',');
+let routeOrder = [], typeNames = {};
 function loadZoneSettings() {
-  $('#prio').value = store.get('prio', DEFAULT_PRIO);
+  $('#order').value = store.get('order', DEFAULT_ORDER); // key "prio" (old zone-only order) is ignored on purpose
   $('#types').value = store.get('types', DEFAULT_TYPES);
   applyZoneSettings();
 }
 function applyZoneSettings() {
-  prio = $('#prio').value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean).map((s) => pad(+s));
+  routeOrder = $('#order').value.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => /^\d{1,2}(\.\d{1,2})?$/.test(s))
+    .map((s) => s.split('.').map((x) => pad(+x)).join('.'));
   typeNames = Object.fromEntries($('#types').value.split(';').map((p) => p.split('=').map((x) => x.trim())).filter((p) => p.length === 2 && p[0]).map(([k, v]) => [pad(+k), v]));
-  store.set('prio', $('#prio').value);
+  store.set('order', $('#order').value);
   store.set('types', $('#types').value);
 }
 const zoneName = (z) => typeNames[z] || `Зона ${z}`;
 const zoneClass = (z) => (/high/i.test(zoneName(z)) ? 't-hr' : /pick|invent/i.test(zoneName(z)) ? 't-pick' : 't-other');
-const tierOf = (z) => { const i = prio.indexOf(z); return i < 0 ? prio.length + Number(z) / 100 : i; };
+/**
+ * Position of a location in the walking order: its "zone.sector" entry, else its whole-zone entry.
+ * A sector missing from the order (03.05, 13.05 by default) goes after all listed sectors but
+ * before highrack, so highrack always stays last.
+ */
+function itemTier(code) {
+  const zs = code.slice(0, 5), z = code.slice(0, 2);
+  let i = routeOrder.indexOf(zs);
+  if (i < 0) i = routeOrder.indexOf(z);
+  if (i >= 0) return { tier: i, listed: true };
+  const hr = routeOrder.indexOf('07');
+  const zp = prio.indexOf(z);
+  return { tier: (hr >= 0 ? hr : routeOrder.length) - 0.5 + (zp >= 0 ? zp : 9) / 100 + Number(code.slice(3, 5)) / 1e4, listed: false };
+}
+
+/* Manual edits of Article ID / quantity, bound to the location code (not to the table row). */
+const overrides = store.get('overrides', {});
+function setOverride(code, field, value) {
+  const o = { ...(overrides[code] || {}) };
+  if (value === undefined) delete o[field]; else o[field] = value;
+  if (Object.keys(o).length) overrides[code] = o; else delete overrides[code];
+  store.set('overrides', overrides);
+}
+const effQty = (it) => (overrides[it.code] && 'qty' in overrides[it.code] ? overrides[it.code].qty : it.qty);
+const effArticle = (it) => overrides[it.code]?.articleId || '';
 
 /** Rough walking distance between two locations (no warehouse map: estimated from the code hierarchy). */
 function distance(a, b) {
@@ -323,19 +363,20 @@ function parseText(text) {
 /* ═════════ Route ═════════ */
 
 let lastRoute = [];
-/** Known locations ordered by zone priority, nearest-next inside a zone; unknown codes go last. */
+/** Known locations in the fixed sector order, nearest-next inside a sector; unknown codes go last. */
 function buildRoute(items, hereCode) {
   const tiers = new Map();
   for (const it of items.filter((x) => x.status !== 'bad')) {
-    const z = it.code.slice(0, 2);
-    if (!tiers.has(tierOf(z))) tiers.set(tierOf(z), []);
-    tiers.get(tierOf(z)).push(it);
+    const { tier, listed } = itemTier(it.code);
+    it.unlisted = !listed;
+    if (!tiers.has(tier)) tiers.set(tier, []);
+    tiers.get(tier).push(it);
   }
   const order = [];
   let pos = hereCode && /^\d\d(\.\d\d){5}$/.test(hereCode) ? segs(hereCode) : null;
   for (const t of [...tiers.keys()].sort((a, b) => a - b)) {
     const left = tiers.get(t).slice().sort((a, b) => a.code.localeCompare(b.code));
-    while (left.length) { // nearest next location inside the zone
+    while (left.length) { // nearest next location inside the sector
       let best = 0;
       if (pos) left.forEach((it, i) => { if (distance(pos, segs(it.code)) < distance(pos, segs(left[best].code))) best = i; });
       const it = left.splice(best, 1)[0];
@@ -383,7 +424,8 @@ function renderRoute() {
   if (here) chips.push(el('span', { class: 'chip me' }, `📍 ${here}`), ' → ');
   route.forEach((it, i) => {
     if (i >= n) return;
-    chips.push(el('span', { class: 'chip' + (i === 0 ? ' a' : i === n - 1 ? ' b' : '') }, `${label(i)}: ${it.code}`));
+    const kind = zoneClass(it.code.slice(0, 2)) === 't-hr' ? ' hr' : ' pick';
+    chips.push(el('span', { class: 'chip' + kind + (i === 0 || i === n - 1 ? ' end' : '') }, `${label(i)}: ${it.code}`));
     if (i < n - 1) chips.push(' → ');
   });
   $('#path').replaceChildren(...chips);
@@ -391,12 +433,15 @@ function renderRoute() {
   $('#rows').replaceChildren(...route.map((it, i) => {
     const d = describe(it.code);
     const st = it.status === 'ok' ? ['st-ok', '✓ есть'] : it.status === 'fix' ? ['st-fix', `✎ OCR: ${it.from}`] : ['st-bad', '⚠ нет в списке'];
+    if (it.unlisted) st[1] += ' · ⚠ сектор не в порядке обхода';
     return el('tr', { class: (i === 0 && i < n ? 'pa' : i === n - 1 ? 'pb' : '') + (it.code === here ? ' me' : '') },
       el('td', { class: 'pt' }, label(i)),
       el('td', { class: 'code' }, it.code),
       el('td', {}, el('span', { class: `badge ${zoneClass(d.z)}` }, `${d.z} · ${d.type}`)),
       el('td', {}, d.a), el('td', {}, d.r), el('td', {}, d.k), el('td', {}, d.l), el('td', {}, d.m),
-      el('td', {}, it.qty != null ? String(it.qty) : '—', el('small', { title: it.line }, it.rest || '')),
+      el('td', {}, articleInput(it)),
+      el('td', {}, qtyInput(it)),
+      el('td', {}, el('small', { title: it.line }, it.rest || '—')),
       el('td', { class: st[0] }, st[1] + (it.count > 1 ? ` ×${it.count}` : '')),
       el('td', {},
         el('button', { class: 'sm', type: 'button', title: 'Я здесь', onclick: () => { $('#here').value = it.code; renderRoute(); } }, '📍'), ' ',
@@ -404,6 +449,33 @@ function renderRoute() {
         el('button', { class: 'sm', type: 'button', title: 'В печать', onclick: () => addToPrint([it.code]) }, '🖨')));
   }));
   $('#routeOut').classList.remove('hidden');
+}
+
+function articleInput(it) {
+  const inp = el('input', { class: 'cell' + (effArticle(it) ? ' edited' : ''), value: effArticle(it), placeholder: 'Article ID', spellcheck: 'false', 'aria-label': `Article ID ${it.code}` });
+  inp.addEventListener('input', () => {
+    const v = inp.value.trim();
+    setOverride(it.code, 'articleId', v || undefined);
+    inp.classList.toggle('edited', !!v);
+  });
+  return inp;
+}
+
+function qtyInput(it) {
+  const edited = () => !!overrides[it.code] && 'qty' in overrides[it.code];
+  const q = effQty(it);
+  const inp = el('input', { class: 'cell qty' + (edited() ? ' edited' : ''), type: 'number', min: '0', step: '1', inputmode: 'numeric',
+    value: q == null ? '' : String(q), placeholder: '—', title: it.qty != null ? `Из WMS: ${it.qty}` : 'В WMS количества нет', 'aria-label': `Кол-во ${it.code}` });
+  inp.addEventListener('input', () => {
+    const raw = inp.value.trim();
+    if (raw === '') { setOverride(it.code, 'qty', null); inp.classList.add('edited'); return; } // empty = no quantity
+    let n = Math.floor(Number(raw));
+    if (!Number.isFinite(n)) return;
+    if (n < 0) { n = 0; inp.value = '0'; } // negatives are cut off
+    setOverride(it.code, 'qty', n);
+    inp.classList.add('edited');
+  });
+  return inp;
 }
 
 function status(t, cls = '') { $('#status').textContent = t; $('#status').className = cls; }
@@ -672,13 +744,20 @@ $('#srcText').addEventListener('input', () => { clearTimeout(parseTimer); parseT
 $('#btnParse').addEventListener('click', renderRoute);
 $('#here').addEventListener('change', () => { store.set('here', $('#here').value.trim()); renderRoute(); });
 $('#btnHereClear').addEventListener('click', () => { $('#here').value = ''; store.set('here', ''); renderRoute(); });
-$('#prio').addEventListener('change', renderRoute);
+$('#order').addEventListener('change', renderRoute);
+$('#btnOrderReset').addEventListener('click', () => { $('#order').value = DEFAULT_ORDER; renderRoute(); });
+$('#btnOverridesReset').addEventListener('click', () => {
+  if (!confirm('Сбросить все ручные правки Article ID и Кол-во?')) return;
+  for (const k of Object.keys(overrides)) delete overrides[k];
+  store.set('overrides', overrides);
+  renderRoute();
+});
 $('#types').addEventListener('change', renderRoute);
 $('#btnToPrint').addEventListener('click', () => addToPrint(lastRoute.map((r) => r.code)));
 $('#btnCsv').addEventListener('click', () => {
-  const head = ['point', 'location', 'zone', 'type', 'sector', 'row', 'section', 'level', 'place', 'qty', 'status', 'line'];
+  const head = ['point', 'location', 'zone', 'type', 'sector', 'row', 'section', 'level', 'place', 'articleId', 'qty', 'status', 'line'];
   const n = lastRoute.filter((r) => r.status !== 'bad').length;
-  const rows = lastRoute.map((it, i) => { const d = describe(it.code); return [i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'B' : i + 1, it.code, d.z, d.type, d.a, d.r, d.k, d.l, d.m, it.qty ?? '', it.status, it.line]; });
+  const rows = lastRoute.map((it, i) => { const d = describe(it.code); return [i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'B' : i + 1, it.code, d.z, d.type, d.a, d.r, d.k, d.l, d.m, effArticle(it), effQty(it) ?? '', it.status, it.line]; });
   const csv = '﻿' + [head, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
   const a = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'trasa-m13.csv' });
   document.body.append(a); a.click(); a.remove();
@@ -743,7 +822,7 @@ if (hash.get('print')) {
   showTab('route');
 }
 
-window.M13L = { parseText, buildRoute, isKnownLoc, allLocs, computeLayout, modules, correct };
+window.M13L = { parseText, buildRoute, isKnownLoc, allLocs, computeLayout, modules, correct, itemTier, SECTOR_ORDER, overrides };
 </script>
 </body>
 </html>
