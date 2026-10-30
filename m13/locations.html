@@ -188,8 +188,8 @@
         <button id="btnOverridesReset" class="sm" type="button" style="flex:0 0 auto">✕ Сбросить правки Article ID / Кол-во</button>
       </div>
       <div class="row" style="margin-bottom:8px">
-        <div style="flex:1 1 100%"><label class="f" for="nameSvc">Сервис названий (необязательно): URL с {id}, отвечает JSON с name или страницей товара</label>
-          <input id="nameSvc" placeholder="https://ваш-сервер/api/lookup?code={id}" spellcheck="false"></div>
+        <div style="flex:1 1 100%"><label class="f" for="nameSvc">Сервис названий: пусто = свой сервер Netlify (/api/name/{id}); можно указать другой URL с {id}</label>
+          <input id="nameSvc" placeholder="/api/name/{id}" spellcheck="false"></div>
       </div>
       <label class="btn sm" for="locFile">📄 Загрузить список локализаций (.txt, по одной в строке)<input id="locFile" type="file" accept=".txt,.csv,text/plain" multiple class="hidden"></label>
     </details>
@@ -446,6 +446,7 @@ function parseLines(lines, blockAid, found) {
 /* ═════════ Route ═════════ */
 
 let lastRoute = [];
+let routeStatus = { text: '', cls: '' }; // name lookup messages are appended to this line
 /** Known locations in the fixed sector order, nearest-next inside a sector; unknown codes go last. */
 function buildRoute(items, hereCode) {
   const tiers = new Map();
@@ -503,7 +504,8 @@ function renderRoute() {
   const bad = route.filter((r) => r.status === 'bad').length;
   const fixed = route.filter((r) => r.status === 'fix').length;
   const shots = ($('#srcText').value.match(/^# Скриншот \d+/gm) || []).length;
-  status(`${shots ? `Скриншотов: ${shots} · ` : ''}Найдено локализаций: ${route.length}${fixed ? ` · исправлено OCR: ${fixed}` : ''}${bad ? ` · нет в списке склада: ${bad}` : ''}`, bad ? 'warnc' : 'okc');
+  routeStatus = { text: `${shots ? `Скриншотов: ${shots} · ` : ''}Найдено локализаций: ${route.length}${fixed ? ` · исправлено OCR: ${fixed}` : ''}${bad ? ` · нет в списке склада: ${bad}` : ''}`, cls: bad ? 'warnc' : 'okc' };
+  status(routeStatus.text, routeStatus.cls);
 
   const chips = [];
   if (here) chips.push(el('span', { class: 'chip me' }, `📍 ${here}`), ' → ');
@@ -633,6 +635,7 @@ async function addShots(files) {
   } finally {
     busy = false;
   }
+  lookupNames({ auto: true });
 }
 
 async function readShot(file) {
@@ -673,33 +676,65 @@ function extractName(body) {
   return m ? m[1].replace(/\s*[|–-]\s*AUTODOC.*$/i, '').replace(/\s+/g, ' ').trim() : '';
 }
 
+const DEFAULT_NAME_SVC = '/api/name/{id}'; // Netlify Function next to this page (netlify/functions/name.mjs)
+const nameSvc = () => $('#nameSvc').value.trim() || (/^https?:$/.test(location.protocol) ? DEFAULT_NAME_SVC : '');
+const missingSvcs = new Set(); // service URLs that do not exist here (site published without the function, e.g. Netlify Drop)
+const routeNote = (msg, cls) => status(routeStatus.text ? `${routeStatus.text} · ${msg}` : msg, cls || routeStatus.cls);
+const triedIds = new Set(); // automatic lookup asks for each Article ID once per session
+let namesBusy = false;
+
 /**
- * Names for every Article ID in the route. A web page cannot read autodoc.pl itself (the site does
- * not allow cross-origin reads), so automatic lookup needs a name service URL in the settings; without
- * it each row has 🔎 (opens the AutoDoc search) and the typed name is remembered.
+ * Names for every Article ID in the route via the name service (the page cannot read autodoc.pl
+ * itself). auto=true runs after each screenshot: quiet, and only for IDs not asked before.
  */
-async function lookupNames() {
-  const svc = $('#nameSvc').value.trim();
-  store.set('nameSvc', svc);
-  const ids = [...new Set(lastRoute.map(effArticle).filter(Boolean))].filter((a) => !names[a]);
-  if (!ids.length) return status(lastRoute.some(effArticle) ? 'Все названия уже есть.' : 'Нет Article ID: заполните колонку Article ID.', 'okc');
-  if (!svc) {
-    return status(`Нужно названий: ${ids.length}. Браузер не может сам прочитать autodoc.pl: нажмите 🔎 в строке (откроется поиск AutoDoc) ` +
-      'и вставьте название — оно запомнится для этого Article ID. Для автоматического поиска укажите сервис названий в ⚙.', 'warnc');
+async function lookupNames({ auto = false } = {}) {
+  if (namesBusy) return;
+  const svc = nameSvc();
+  store.set('nameSvc', $('#nameSvc').value.trim());
+  const ids = [...new Set(lastRoute.map(effArticle).filter(Boolean))].filter((a) => !names[a] && !(auto && triedIds.has(a)));
+  if (!ids.length) {
+    if (!auto) status(lastRoute.some(effArticle) ? 'Все названия уже есть.' : 'Нет Article ID: заполните колонку Article ID.', 'okc');
+    return;
   }
-  let ok = 0;
-  for (const [i, id] of ids.entries()) {
-    status(`Ищу названия… ${i + 1}/${ids.length}`);
-    try {
-      const res = await fetch(svc.replaceAll('{id}', encodeURIComponent(id)), { signal: AbortSignal.timeout(15000) });
-      const name = res.ok ? extractName(await res.text()) : '';
-      if (name) { names[id] = name; ok++; }
-    } catch { /* network / CORS: leave empty */ }
-    if (i < ids.length - 1) await new Promise((r) => setTimeout(r, 800)); // gentle on the service
+  if (auto && missingSvcs.has(svc)) return; // already explained once
+  if (!svc) {
+    if (!auto) status(`Нужно названий: ${ids.length}. Автопоиск недоступен (страница открыта как файл или сайт загружен без сервера). ` +
+      'Нажмите 🔎 в строке — откроется поиск AutoDoc; введённое название запомнится.', 'warnc');
+    return;
+  }
+  namesBusy = true;
+  let ok = 0, notFound = 0, failed = 0, missing = false;
+  try {
+    for (const [i, id] of ids.entries()) {
+      triedIds.add(id);
+      routeNote(`ищу названия на AutoDoc… ${i + 1}/${ids.length}`);
+      let res, body = '';
+      try {
+        res = await fetch(svc.replaceAll('{id}', encodeURIComponent(id)), { signal: AbortSignal.timeout(15000) });
+        body = await res.text();
+      } catch { failed++; continue; }
+      const isJson = /^\s*[{[]/.test(body);
+      if (res.status === 404 && !isJson) { missing = true; missingSvcs.add(svc); break; } // no function on this site
+      if (res.ok) {
+        const name = extractName(body);
+        if (name) { names[id] = name; ok++; } else notFound++;
+      } else if (res.status === 404) notFound++;
+      else failed++;
+      if (i < ids.length - 1) await new Promise((r) => setTimeout(r, 400)); // gentle on AutoDoc (answers are cached anyway)
+    }
+  } finally {
+    namesBusy = false;
   }
   store.set('names', names);
   renderRoute();
-  status(`Названия найдены: ${ok} из ${ids.length}.`, ok === ids.length ? 'okc' : 'warnc');
+  if (!$('#pickList').classList.contains('hidden')) renderPickList();
+  if (missing) {
+    routeNote('Сервер названий не найден: сайт загружен без функции (например, через Netlify Drop) — загрузите его из GitHub или Netlify CLI. ' +
+      'Пока: 🔎 в строке и ввод названия вручную.', 'warnc');
+    return;
+  }
+  routeNote(`Названия AutoDoc: найдено ${ok} из ${ids.length}` + (notFound ? ` · не найдено: ${notFound}` : '') + (failed ? ` · ошибка/блокировка: ${failed}` : '') +
+    (notFound || failed ? ' — для них 🔎 в строке.' : ''), ok === ids.length ? routeStatus.cls : 'warnc');
 }
 
 /* ═════════ Picking list: Локализация | Название товара | Кол-во ═════════ */
@@ -964,7 +999,7 @@ $('#btnClearAll').addEventListener('click', () => {
   renderRoute();
   status('Очищено. Добавьте скриншот.');
 });
-$('#btnNames').addEventListener('click', lookupNames);
+$('#btnNames').addEventListener('click', () => lookupNames());
 $('#btnToList').addEventListener('click', () => { printKind = 'list'; showTab('print'); });
 $('#pkLabels').addEventListener('click', () => setPrintKind('labels'));
 $('#pkList').addEventListener('click', () => setPrintKind('list'));

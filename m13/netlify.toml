@@ -1,0 +1,10 @@
+# Netlify: the m13 folder is the whole site. Static pages + one function for product names.
+# Deploy from Git (base directory "m13") or with the Netlify CLI from this folder.
+# Netlify Drop (drag & drop) publishes only the pages: the name lookup needs one of the two above.
+[build]
+  publish = "."
+  functions = "netlify/functions"
+  command = ""
+
+[functions]
+  node_bundler = "esbuild"
