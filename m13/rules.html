@@ -12,6 +12,7 @@
   3. Проверьте выбранный код (его можно исправить в поле «Код для печати») и покажите большой
      Code-128 сканеру: кнопка «НА ВЕСЬ ЭКРАН».
   «НОВЫЙ ТОВАР» очищает всё перед следующей этикеткой.
+  «A4 ×32»: лист этикеток с выбранным кодом (файл locations.html рядом).
   При первом запуске нужен интернет: библиотеки и OCR-модель (~5 МБ) грузятся с CDN, потом кэшируются браузером.
   Камера работает только по https:// (или localhost). Кнопка «ФОТО» работает везде.
 -->
@@ -140,6 +141,7 @@
     <div class="row" style="margin-top:8px">
       <button id="btnCopy" class="small" type="button" disabled>КОПИРОВАТЬ</button>
       <button id="btnPng" class="small" type="button" disabled>PNG</button>
+      <button id="btnA4" class="small" type="button" disabled>🖨 A4 ×32</button>
     </div>
   </section>
 
@@ -442,7 +444,7 @@ function renderBarcode(code) {
   const ok = !!code && /^[\x20-\x7e]+$/.test(code);
   $('#bcError').textContent = code && !ok ? 'Code-128: только латиница, цифры и символы ASCII' : '';
   $('#barcodeBox').classList.toggle('hidden', !ok);
-  for (const id of ['#btnFull', '#btnCopy', '#btnPng']) $(id).disabled = !ok;
+  for (const id of ['#btnFull', '#btnCopy', '#btnPng', '#btnA4']) $(id).disabled = !ok;
   if (!ok) return;
   drawSvg($('#barcode'), code, 3, 150, 30);
 }
@@ -762,6 +764,13 @@ $('#full').addEventListener('click', async () => {
   try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
   try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
   try { await wakeLock?.release(); } catch { /* ignore */ }
+});
+// Printing: A4 sheet of labels in the companion tool (same folder).
+$('#btnA4').addEventListener('click', () => {
+  const code = currentCode();
+  if (!code) return;
+  remember(code);
+  window.open(`locations.html#print=${encodeURIComponent(code)}`, '_blank');
 });
 $('#btnCopy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(currentCode()); setStatus('Скопировано', 'ok'); }

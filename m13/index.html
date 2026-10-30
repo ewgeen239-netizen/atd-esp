@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- M13 · стартовая страница: меню инструментов склада (для Netlify / GitHub Pages). -->
+<!-- M13 · стартовая страница: выбор режима (для Netlify / GitHub Pages). У каждого режима — своя печать. -->
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -12,34 +12,58 @@
   main { max-width: 560px; margin: 0 auto; padding: 18px 14px 40px; }
   h1 { font-size: 22px; margin: 4px 0 4px; }
   p.sub { color: #a3a3a3; margin: 0 0 18px; font-size: 15px; }
-  a.tool { display: block; text-decoration: none; color: #fff; background: #111; border: 2px solid #2b2b2b; border-radius: 18px;
-    padding: 16px; margin-bottom: 12px; }
-  a.tool:active { transform: scale(.99); }
-  a.tool.main { background: #ffd400; border-color: #ffd400; color: #000; }
-  a.tool b { display: block; font-size: 22px; font-weight: 900; margin-bottom: 4px; }
-  a.tool span { font-size: 15px; opacity: .85; }
+  .tool { background: #111; border: 2px solid #2b2b2b; border-radius: 18px; margin-bottom: 12px; overflow: hidden; }
+  .tool.main { border-color: #ffd400; }
+  .tool > a.go { display: block; text-decoration: none; color: #fff; padding: 16px 16px 12px; }
+  .tool.main > a.go { background: #ffd400; color: #000; }
+  .tool a.go:active, .tool .print a:active { transform: scale(.99); }
+  .tool b { display: block; font-size: 22px; font-weight: 900; margin-bottom: 4px; }
+  .tool span { font-size: 15px; opacity: .85; }
+  .tool .print { display: flex; gap: 8px; padding: 10px 12px 12px; }
+  .tool .print a { flex: 1; text-align: center; text-decoration: none; color: #fff; background: #1c1c1c; border: 2px solid #3a3a3a;
+    border-radius: 12px; padding: 10px 8px; font-weight: 800; font-size: 15px; }
   footer { color: #737373; font-size: 13px; margin-top: 18px; }
 </style>
 </head>
 <body>
 <main>
   <h1>M13 · AutoDoc Logistic</h1>
-  <p class="sub">Инструменты склада. Добавьте страницу на главный экран телефона.</p>
+  <p class="sub">Выберите режим. Добавьте страницу на главный экран телефона.</p>
 
-  <a class="tool main" href="scan.html">
-    <b>📷 СКАНЕР</b>
-    <span>Камера → ArticleId (сам находит номер на этикетке) → большой Code-128</span>
-  </a>
-  <a class="tool" href="locations.html">
-    <b>🗺 ЛОКАЦИИ И ПЕЧАТЬ A4</b>
-    <span>Скриншот WMS → маршрут A (highrack) → Б (inventory) · этикетки ~32 на лист</span>
-  </a>
-  <a class="tool" href="rules.html">
-    <b>⚙ СКАНЕР С ПРАВИЛАМИ</b>
-    <span>Прежняя версия: все коды этикетки, выбор по правилам, ручная правка</span>
-  </a>
+  <div class="tool main">
+    <a class="go" href="scan.html">
+      <b>📷 СКАНЕР</b>
+      <span>Камера → ArticleId (сам находит номер на этикетке) → большой Code-128</span>
+    </a>
+    <div class="print"><a href="locations.html#tab=labels">🖨 Печать A4 (этикетки)</a></div>
+  </div>
 
-  <footer>При первом открытии нужен интернет (библиотеки и OCR-модель кэшируются браузером).</footer>
+  <div class="tool">
+    <a class="go" href="locations.html">
+      <b>🗺 ЛОКАЦИИ И ПЕЧАТЬ A4</b>
+      <span>Скриншоты WMS → маршрут по секторам → лист отбора: локализация · название · кол-во</span>
+    </a>
+    <div class="print"><a href="locations.html#tab=list">📋 Лист отбора</a><a href="locations.html#tab=labels">🏷 Этикетки A4</a></div>
+  </div>
+
+  <div class="tool">
+    <a class="go" href="rules.html">
+      <b>⚙ СКАНЕР С ПРАВИЛАМИ</b>
+      <span>Все коды этикетки, выбор по правилам M13, ручная правка</span>
+    </a>
+    <div class="print"><a href="locations.html#tab=labels">🖨 Печать A4 (этикетки)</a></div>
+  </div>
+
+  <div class="tool">
+    <a class="go" href="scan-classic.html">
+      <b>📷 СКАНЕР (ПРЕЖНЯЯ ВЕРСИЯ)</b>
+      <span>До обновления: ArticleId → ArticleNr → EAN-13 → любой код, без автопоиска номера на этикетке</span>
+    </a>
+    <div class="print"><a href="locations.html#tab=labels">🖨 Печать A4 (этикетки)</a></div>
+  </div>
+
+  <footer>В каждом сканере кнопка «🖨 A4 ×32» печатает лист этикеток с найденным кодом.
+    При первом открытии нужен интернет (библиотеки и OCR-модель кэшируются браузером).</footer>
 </main>
 </body>
 </html>

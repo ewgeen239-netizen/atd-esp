@@ -3,8 +3,10 @@
   M13 · Локализации: маршрут по скриншоту + печать штрих-кодов на A4
   ───────────────────────────────────────────────────────────────────
   МАРШРУТ
-  1. «СКРИНШОТ»: выберите/вставьте (Ctrl+V) скриншот WMS со списком локализаций товара,
+  1. «＋ СКРИНШОТ»: выберите/вставьте (Ctrl+V) скриншот WMS со списком локализаций товара,
      или вставьте текст из WMS в поле. Найдутся все коды вида 07.03.02.14.08.01.
+     Каждый следующий скриншот ДОБАВЛЯЕТСЯ к предыдущим; «🗑 ОЧИСТИТЬ» — начать заново.
+     Article ID берётся из строки (число от 5 цифр) или из заголовка скриншота («Artikel 251310»).
   2. Каждая локализация проверяется по полному списку склада (файлы «18 префиксов» и «07»)
      и раскладывается: зона · сектор · ряд · секция · уровень · место.
   3. Порядок обхода строгий, «змейкой» по секторам основных зон:
@@ -13,7 +15,9 @@
      ближайшей («Я здесь» задаёт вашу позицию). Порядок меняется в настройках.
      Колонки Article ID и Кол-во можно править: правки привязаны к локализации и сохраняются.
   ПЕЧАТЬ A4
-  4. Коды для печати: из таблицы, по фильтру (напр. 07.03.*) или один код × 32 на лист.
+  4. «📋 ЛИСТ ОТБОРА»: таблица по маршруту — Локализация | Название товара (AutoDoc, по Article ID)
+     | Кол-во. Названия: 🔎 в строке открывает поиск AutoDoc; введённое название запоминается.
+  5. «🏷 ЭТИКЕТКИ»: коды из таблицы, по фильтру (напр. 07.03.*) или один код × 32 на лист.
      Сетку (≈32 на лист) инструмент подбирает сам так, чтобы штрих-код читался лучше всего;
      размеры, поля, колонки/ряды можно задать вручную. «ПЕЧАТЬ» → принтер или PDF.
   При первом открытии нужен интернет (JsBarcode, Tesseract ~5 МБ; дальше из кэша).
@@ -69,6 +73,29 @@
   td input.cell { width: 130px; padding: 6px 8px; font-size: 15px; border-radius: 8px; }
   td input.cell.qty { width: 82px; }
   td input.cell.edited { border-color: #a855f7; }
+  td input.cell.name { width: 230px; }
+  td .nmcell { display: flex; gap: 4px; align-items: center; }
+  .seg { display: flex; gap: 8px; margin-top: 10px; }
+  .seg button { flex: 1; }
+  .seg button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #000; }
+
+  /* picking list (A4 table) */
+  .plist { background: #fff; color: #000; border-radius: 6px; padding: 10mm; max-width: 210mm; margin: 12px auto 0; font: 13px/1.3 system-ui, sans-serif; }
+  .plist h3 { margin: 0 0 1.5mm; font-size: 17px; }
+  .plist .meta { color: #333; font-size: 12px; margin-bottom: 4mm; }
+  .plist-empty { color: var(--muted); }
+  table.pick { width: 100%; border-collapse: collapse; }
+  table.pick th, table.pick td { border: .3mm solid #000; padding: 1.6mm 2mm; vertical-align: middle; white-space: normal; color: #000;
+    text-align: left; position: static; background: #fff; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  table.pick th { background: #e9e9e9; font-weight: 800; }
+  table.pick td.loc { width: 40%; }
+  table.pick td.loc b { font: 800 15px ui-monospace, Menlo, Consolas, monospace; }
+  table.pick td.loc svg { display: block; width: 66mm; height: 7mm; margin: 1mm 0 .5mm; }
+  table.pick td small { display: block; color: #333; font-size: 10.5px; max-width: none; overflow: visible; }
+  table.pick td.nm b { font-size: 13px; }
+  table.pick td.q { width: 13%; text-align: center; font: 900 20px system-ui, sans-serif; }
+  table.pick tr { break-inside: avoid; page-break-inside: avoid; }
+  table.pick .pt { display: inline-block; min-width: 6mm; font-weight: 900; margin-right: 1.5mm; }
   tr.me td { background: #071c2b; }
   .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
   .t-hr { background: #052e16; color: #86efac; } .t-pick { background: #431407; color: #fdba74; } .t-other { background: #222; color: #ddd; }
@@ -94,9 +121,9 @@
   #full p { color: #000; font: 700 18px ui-monospace, Menlo, monospace; margin: 8px 0 0; text-align: center; }
 
   @media print {
-    @page { size: A4 portrait; margin: 0; }
     html, body { background: #fff !important; }
-    .no-print, main > *:not(#printTab), #printTab > *:not(#sheets) { display: none !important; }
+    .no-print, main > *:not(#printTab), #printTab > *:not(#sheets):not(#pickList) { display: none !important; }
+    .plist { padding: 0; margin: 0; max-width: none; border-radius: 0; }
     main { max-width: none; padding: 0; margin: 0; }
     #printTab { display: block !important; }
     #sheets { margin: 0; }
@@ -105,6 +132,7 @@
     .sheet { transform: none !important; }
   }
 </style>
+<style id="pageStyle">@page { size: A4 portrait; margin: 0; }</style>
 </head>
 <body>
 <main>
@@ -117,10 +145,11 @@
   <section id="routeTab">
     <div class="panel">
       <div class="row">
-        <label class="btn primary" for="shot">🖼 СКРИНШОТ<input id="shot" type="file" accept="image/*" class="hidden"></label>
-        <button id="btnParse" type="button">↻ РАЗОБРАТЬ ТЕКСТ</button>
+        <label class="btn primary" for="shot">＋ СКРИНШОТ<input id="shot" type="file" accept="image/*" multiple class="hidden"></label>
+        <button id="btnParse" type="button">↻ РАЗОБРАТЬ</button>
+        <button id="btnClearAll" type="button">🗑 ОЧИСТИТЬ</button>
       </div>
-      <label class="f" for="srcText" style="margin-top:10px">Текст из WMS (вставьте или поправьте после OCR); Ctrl+V картинки тоже работает</label>
+      <label class="f" for="srcText" style="margin-top:10px">Текст из WMS: каждый новый скриншот добавляется к предыдущим (Ctrl+V картинки тоже работает)</label>
       <textarea id="srcText" spellcheck="false" placeholder="07.03.02.14.08.01   12 szt&#10;03.02.11.05.02.03   4 szt"></textarea>
       <div class="row" style="margin-top:8px">
         <div style="flex:3 1 220px"><label class="f" for="here">📍 Я здесь (локализация; пусто = начинаю с точки А)</label>
@@ -134,11 +163,13 @@
       <h2>Маршрут</h2>
       <div id="path" class="path"></div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Точка</th><th>Локализация</th><th>Тип</th><th>Сектор</th><th>Ряд</th><th>Секция</th><th>Уровень</th><th>Место</th><th>Article ID</th><th>Кол-во</th><th>Строка WMS</th><th>Список</th><th></th></tr></thead>
+        <thead><tr><th>Точка</th><th>Локализация</th><th>Тип</th><th>Сектор</th><th>Ряд</th><th>Секция</th><th>Уровень</th><th>Место</th><th>Article ID</th><th>Название товара (AutoDoc)</th><th>Кол-во</th><th>Строка WMS</th><th>Список</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
       <div class="row" style="margin-top:10px">
-        <button id="btnToPrint" type="button">🖨 ВСЕ В ПЕЧАТЬ</button>
+        <button id="btnNames" type="button">🔎 НАЙТИ НАЗВАНИЯ</button>
+        <button id="btnToList" class="primary" type="button">📋 ЛИСТ ОТБОРА</button>
+        <button id="btnToPrint" type="button">🏷 ВСЕ В ЭТИКЕТКИ</button>
         <button id="btnCsv" type="button">⬇ CSV</button>
       </div>
     </div>
@@ -156,13 +187,33 @@
         <button id="btnOrderReset" class="sm" type="button" style="flex:0 0 auto">↺ Порядок по умолчанию</button>
         <button id="btnOverridesReset" class="sm" type="button" style="flex:0 0 auto">✕ Сбросить правки Article ID / Кол-во</button>
       </div>
+      <div class="row" style="margin-bottom:8px">
+        <div style="flex:1 1 100%"><label class="f" for="nameSvc">Сервис названий (необязательно): URL с {id}, отвечает JSON с name или страницей товара</label>
+          <input id="nameSvc" placeholder="https://ваш-сервер/api/lookup?code={id}" spellcheck="false"></div>
+      </div>
       <label class="btn sm" for="locFile">📄 Загрузить список локализаций (.txt, по одной в строке)<input id="locFile" type="file" accept=".txt,.csv,text/plain" multiple class="hidden"></label>
     </details>
   </section>
 
   <!-- ═════════ PRINT ═════════ -->
   <section id="printTab" class="hidden">
-    <div class="panel no-print">
+    <div class="seg no-print">
+      <button id="pkList" type="button" aria-pressed="false">📋 ЛИСТ ОТБОРА</button>
+      <button id="pkLabels" type="button" aria-pressed="true">🏷 ЭТИКЕТКИ</button>
+    </div>
+    <div id="listCtl" class="panel no-print hidden">
+      <p style="margin:0 0 8px;color:var(--muted);font-size:14px">Таблица по маршруту со вкладки «МАРШРУТ»: Локализация · Название товара · Кол-во. Название и количество правятся там же.</p>
+      <div class="row">
+        <label class="chk"><input id="lBarcode" type="checkbox" checked> Штрих-код локализации</label>
+        <label class="chk"><input id="lOnlyKnown" type="checkbox" checked> Только локализации из списка склада</label>
+      </div>
+      <div id="lInfo" style="margin-top:8px;font-size:15px"></div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnPrintList" class="primary" type="button">🖨 ПЕЧАТЬ ЛИСТА / PDF</button>
+        <button id="btnListBack" type="button">← К МАРШРУТУ</button>
+      </div>
+    </div>
+    <div id="labelsCtl" class="panel no-print">
       <label class="f" for="pCodes">Коды для печати (по одному в строке)</label>
       <textarea id="pCodes" spellcheck="false" placeholder="07.03.02.14.08.01&#10;224800"></textarea>
       <div class="row" style="margin-top:8px">
@@ -198,6 +249,7 @@
       </div>
     </div>
     <div id="sheets"></div>
+    <div id="pickList" class="hidden"></div>
   </section>
 </main>
 
@@ -300,7 +352,11 @@ function setOverride(code, field, value) {
   store.set('overrides', overrides);
 }
 const effQty = (it) => (overrides[it.code] && 'qty' in overrides[it.code] ? overrides[it.code].qty : it.qty);
-const effArticle = (it) => overrides[it.code]?.articleId || '';
+const effArticle = (it) => overrides[it.code]?.articleId || it.articleAuto || '';
+/* Product names from AutoDoc, remembered per Article ID (a location without an Article ID keeps its own). */
+const names = store.get('names', {});
+const effName = (it) => overrides[it.code]?.name || names[effArticle(it)] || '';
+const AUTODOC_SEARCH = 'https://www.autodoc.pl/search?keyword=';
 
 /** Rough walking distance between two locations (no warehouse map: estimated from the code hierarchy). */
 function distance(a, b) {
@@ -332,15 +388,42 @@ function correct(code) {
   return hits.size === 1 ? [...hits][0] : null;
 }
 
+// "Artikel 251310", "Article ID: 251310", "Art. Nr 251310", "Артикул 251310"
+const AID_LABEL_RE = /(?:article\s*-?\s*id|artikel(?:nummer|nr\.?)?|art(?:ykuł|ykul)?\.?\s*(?:id|nr\.?|no\.?)|артикул|article)\s*[:#№]?\s*(\d{4,10})(?![\d.])/i;
+const lineHasLoc = (line) => { LOC_RE.lastIndex = 0; const r = LOC_RE.test(line); LOC_RE.lastIndex = 0; return r; };
+
+/**
+ * Locations from WMS text. Text is split into screenshot blocks ("# Скриншот N" lines): an Article ID
+ * printed in a block's header applies to its rows; a 5+ digit number on the row itself wins.
+ */
 function parseText(text) {
   const found = new Map();
+  const blocks = [];
+  let cur = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    if (/^\s*#/.test(line) && cur.length) { blocks.push(cur); cur = []; }
+    cur.push(line);
+  }
+  if (cur.length) blocks.push(cur);
+  for (const lines of blocks) {
+    const blockAid = lines.filter((l) => !lineHasLoc(l)).map((l) => (l.match(AID_LABEL_RE) || [])[1]).find(Boolean) || null;
+    parseLines(lines, blockAid, found);
+  }
+  return [...found.values()];
+}
+
+function parseLines(lines, blockAid, found) {
   const add = (code, status, from, line, rest) => {
     const prev = found.get(code);
     if (prev) { prev.count++; return; }
-    const qty = (rest.match(/(?<![\d.,/:])\d{1,5}(?![\d.,/:])/) || [])[0];
-    found.set(code, { code, status, from, line: line.trim(), rest: rest.trim(), qty: qty ? Number(qty) : null, count: 1 });
+    const nums = rest.match(/(?<![\d.,/:])\d{1,10}(?![\d.,/:])/g) || [];
+    const rowAid = (rest.match(AID_LABEL_RE) || [])[1] || nums.find((t) => t.length >= 5) || null;
+    const qty = nums.find((t) => t.length <= 4 && t !== rowAid);
+    found.set(code, { code, status, from, line: line.trim(), rest: rest.trim(), qty: qty ? Number(qty) : null, count: 1,
+      articleAuto: rowAid || blockAid || null });
   };
-  for (const line of String(text).split(/\r?\n/)) {
+  for (const line of lines) {
+    if (/^\s*#/.test(line)) continue;
     for (const re of [LOC_RE, LOC_BARE]) {
       re.lastIndex = 0;
       let m;
@@ -408,6 +491,7 @@ function renderRoute() {
   const items = parseText($('#srcText').value);
   const here = $('#here').value.trim();
   if (!items.length) {
+    lastRoute = [];
     $('#routeOut').classList.add('hidden');
     status($('#srcText').value.trim() ? 'Локализации в тексте не найдены (формат 07.03.02.14.08.01).' : '', $('#srcText').value.trim() ? 'bad' : '');
     return;
@@ -418,7 +502,8 @@ function renderRoute() {
   const label = (i) => (i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'Б' : String(i + 1));
   const bad = route.filter((r) => r.status === 'bad').length;
   const fixed = route.filter((r) => r.status === 'fix').length;
-  status(`Найдено локализаций: ${route.length}${fixed ? ` · исправлено OCR: ${fixed}` : ''}${bad ? ` · нет в списке склада: ${bad}` : ''}`, bad ? 'warnc' : 'okc');
+  const shots = ($('#srcText').value.match(/^# Скриншот \d+/gm) || []).length;
+  status(`${shots ? `Скриншотов: ${shots} · ` : ''}Найдено локализаций: ${route.length}${fixed ? ` · исправлено OCR: ${fixed}` : ''}${bad ? ` · нет в списке склада: ${bad}` : ''}`, bad ? 'warnc' : 'okc');
 
   const chips = [];
   if (here) chips.push(el('span', { class: 'chip me' }, `📍 ${here}`), ' → ');
@@ -440,6 +525,7 @@ function renderRoute() {
       el('td', {}, el('span', { class: `badge ${zoneClass(d.z)}` }, `${d.z} · ${d.type}`)),
       el('td', {}, d.a), el('td', {}, d.r), el('td', {}, d.k), el('td', {}, d.l), el('td', {}, d.m),
       el('td', {}, articleInput(it)),
+      el('td', {}, nameCell(it)),
       el('td', {}, qtyInput(it)),
       el('td', {}, el('small', { title: it.line }, it.rest || '—')),
       el('td', { class: st[0] }, st[1] + (it.count > 1 ? ` ×${it.count}` : '')),
@@ -452,13 +538,32 @@ function renderRoute() {
 }
 
 function articleInput(it) {
-  const inp = el('input', { class: 'cell' + (effArticle(it) ? ' edited' : ''), value: effArticle(it), placeholder: 'Article ID', spellcheck: 'false', 'aria-label': `Article ID ${it.code}` });
+  const manual = () => !!overrides[it.code]?.articleId;
+  const inp = el('input', { class: 'cell' + (manual() ? ' edited' : ''), value: effArticle(it), placeholder: 'Article ID', spellcheck: 'false',
+    title: it.articleAuto ? `Со скриншота: ${it.articleAuto}` : '', 'aria-label': `Article ID ${it.code}` });
   inp.addEventListener('input', () => {
     const v = inp.value.trim();
-    setOverride(it.code, 'articleId', v || undefined);
-    inp.classList.toggle('edited', !!v);
+    setOverride(it.code, 'articleId', v && v !== it.articleAuto ? v : undefined);
+    inp.classList.toggle('edited', manual());
   });
   return inp;
+}
+
+function nameCell(it) {
+  const inp = el('input', { class: 'cell name' + (effName(it) ? ' edited' : ''), value: effName(it), placeholder: 'название товара', 'aria-label': `Название ${it.code}` });
+  inp.addEventListener('input', () => {
+    const v = inp.value.trim(), aid = effArticle(it);
+    if (aid) { if (v) names[aid] = v; else delete names[aid]; store.set('names', names); }
+    else setOverride(it.code, 'name', v || undefined);
+    inp.classList.toggle('edited', !!v);
+  });
+  const btn = el('button', { class: 'sm', type: 'button', title: 'Найти на AutoDoc по Article ID' }, '🔎');
+  btn.addEventListener('click', () => {
+    const aid = effArticle(it);
+    if (!aid) return status('Сначала укажите Article ID в этой строке.', 'warnc');
+    window.open(AUTODOC_SEARCH + encodeURIComponent(aid), '_blank', 'noopener');
+  });
+  return el('div', { class: 'nmcell' }, inp, btn);
 }
 
 function qtyInput(it) {
@@ -517,9 +622,20 @@ function prepShot(img) {
 }
 
 let busy = false;
-async function readShot(file) {
+const shotQueue = [];
+/** Screenshots are read one after another; each one is appended to the text as its own block. */
+async function addShots(files) {
+  shotQueue.push(...files);
   if (busy) return;
   busy = true;
+  try {
+    while (shotQueue.length) await readShot(shotQueue.shift());
+  } finally {
+    busy = false;
+  }
+}
+
+async function readShot(file) {
   try {
     status('Открываю скриншот…');
     const bmp = await createImageBitmap(file);
@@ -534,13 +650,108 @@ async function readShot(file) {
       ({ data } = await w.recognize(img));
       text = data.text;
     }
-    $('#srcText').value = text.trim();
+    const prev = $('#srcText').value.trim();
+    const n = (prev.match(/^# Скриншот \d+/gm) || []).length + 1;
+    const head = `# Скриншот ${n} · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    $('#srcText').value = [prev, head, text.trim()].filter(Boolean).join('\n');
+    store.set('src', $('#srcText').value);
     renderRoute();
   } catch (err) {
     status(`Не удалось прочитать скриншот: ${err.message || err}`, 'bad');
-  } finally {
-    busy = false;
   }
+}
+
+/* ═════════ Product names ═════════ */
+
+function extractName(body) {
+  try {
+    const j = JSON.parse(body);
+    const n = j.name ?? j.title ?? j.product?.name ?? j.data?.name ?? (Array.isArray(j) ? j[0]?.name : null);
+    if (n) return String(n).trim();
+  } catch { /* not JSON: a product / search page */ }
+  const m = body.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i) || body.match(/<title[^>]*>([^<]+)</i);
+  return m ? m[1].replace(/\s*[|–-]\s*AUTODOC.*$/i, '').replace(/\s+/g, ' ').trim() : '';
+}
+
+/**
+ * Names for every Article ID in the route. A web page cannot read autodoc.pl itself (the site does
+ * not allow cross-origin reads), so automatic lookup needs a name service URL in the settings; without
+ * it each row has 🔎 (opens the AutoDoc search) and the typed name is remembered.
+ */
+async function lookupNames() {
+  const svc = $('#nameSvc').value.trim();
+  store.set('nameSvc', svc);
+  const ids = [...new Set(lastRoute.map(effArticle).filter(Boolean))].filter((a) => !names[a]);
+  if (!ids.length) return status(lastRoute.some(effArticle) ? 'Все названия уже есть.' : 'Нет Article ID: заполните колонку Article ID.', 'okc');
+  if (!svc) {
+    return status(`Нужно названий: ${ids.length}. Браузер не может сам прочитать autodoc.pl: нажмите 🔎 в строке (откроется поиск AutoDoc) ` +
+      'и вставьте название — оно запомнится для этого Article ID. Для автоматического поиска укажите сервис названий в ⚙.', 'warnc');
+  }
+  let ok = 0;
+  for (const [i, id] of ids.entries()) {
+    status(`Ищу названия… ${i + 1}/${ids.length}`);
+    try {
+      const res = await fetch(svc.replaceAll('{id}', encodeURIComponent(id)), { signal: AbortSignal.timeout(15000) });
+      const name = res.ok ? extractName(await res.text()) : '';
+      if (name) { names[id] = name; ok++; }
+    } catch { /* network / CORS: leave empty */ }
+    if (i < ids.length - 1) await new Promise((r) => setTimeout(r, 800)); // gentle on the service
+  }
+  store.set('names', names);
+  renderRoute();
+  status(`Названия найдены: ${ok} из ${ids.length}.`, ok === ids.length ? 'okc' : 'warnc');
+}
+
+/* ═════════ Picking list: Локализация | Название товара | Кол-во ═════════ */
+
+function renderPickList() {
+  const box = $('#pickList');
+  const onlyKnown = $('#lOnlyKnown').checked, withBc = $('#lBarcode').checked;
+  store.set('lOnlyKnown', onlyKnown);
+  store.set('lBarcode', withBc);
+  const rows = lastRoute.filter((it) => !onlyKnown || it.status !== 'bad');
+  if (!rows.length) {
+    box.replaceChildren(el('p', { class: 'plist-empty' }, 'Нет данных: добавьте скриншот на вкладке «МАРШРУТ».'));
+    $('#lInfo').textContent = '';
+    return;
+  }
+  const n = lastRoute.filter((r) => r.status !== 'bad').length;
+  const point = (it) => { const i = lastRoute.indexOf(it); return i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'Б' : String(i + 1); };
+  const total = rows.reduce((sum, it) => sum + (effQty(it) || 0), 0);
+  const noName = rows.filter((it) => !effName(it)).length;
+  const table = el('table', { class: 'pick' },
+    el('thead', {}, el('tr', {}, el('th', {}, 'Локализация'), el('th', {}, 'Название товара (AutoDoc)'), el('th', {}, 'Кол-во'))),
+    el('tbody', {}, rows.map((it) => {
+      const d = describe(it.code), aid = effArticle(it), q = effQty(it);
+      const loc = el('td', { class: 'loc' }, el('span', { class: 'pt' }, point(it)), el('b', {}, it.code));
+      if (withBc && isCode128(it.code)) loc.append(barcodeSvg(it.code));
+      loc.append(el('small', {}, `${d.type} · С${d.a} Р${d.r} К${d.k} У${d.l} М${d.m}`));
+      return el('tr', {}, loc,
+        el('td', { class: 'nm' }, el('b', {}, effName(it) || '—'), el('small', {}, aid ? `Article ID: ${aid}` : 'Article ID не указан')),
+        el('td', { class: 'q' }, q == null ? '—' : String(q)));
+    })));
+  box.replaceChildren(el('div', { class: 'plist' },
+    el('h3', {}, 'Лист отбора · M13'),
+    el('div', { class: 'meta' }, `${new Date().toLocaleString('ru-RU')} · позиций: ${rows.length} · всего шт: ${total} · порядок: маршрут A → Б`),
+    table));
+  $('#lInfo').textContent = `Позиций: ${rows.length} · всего шт: ${total}` +
+    (noName ? ` · без названия: ${noName} — заполните на вкладке «МАРШРУТ» (🔎) или «Найти названия»` : ' · все названия есть ✓');
+  $('#lInfo').className = noName ? 'warnc' : 'okc';
+}
+
+let printKind = store.get('printKind', 'labels');
+function setPrintKind(kind) {
+  printKind = kind;
+  store.set('printKind', kind);
+  $('#pkLabels').setAttribute('aria-pressed', String(kind === 'labels'));
+  $('#pkList').setAttribute('aria-pressed', String(kind === 'list'));
+  for (const [id, k] of [['#labelsCtl', 'labels'], ['#sheets', 'labels'], ['#listCtl', 'list'], ['#pickList', 'list']]) $(id).classList.toggle('hidden', kind !== k);
+  if (kind === 'labels') renderSheets(); else renderPickList();
+}
+/** Labels use the whole sheet (no page margin); the picking list gets 10 mm margins on every page. */
+function printWithMargin(mm) {
+  $('#pageStyle').textContent = `@page { size: A4 portrait; margin: ${mm}mm; }`;
+  window.print();
 }
 
 /* ═════════ Barcodes ═════════ */
@@ -713,8 +924,8 @@ function renderSheets() {
 function addToPrint(list) {
   const cur = $('#pCodes').value.trim();
   $('#pCodes').value = [cur, ...list].filter(Boolean).join('\n');
+  printKind = 'labels';
   showTab('print');
-  renderSheets();
 }
 
 /* ═════════ Tabs & events ═════════ */
@@ -724,23 +935,44 @@ function showTab(name) {
   $('#printTab').classList.toggle('hidden', name !== 'print');
   $('#tabRoute').setAttribute('aria-selected', String(name === 'route'));
   $('#tabPrint').setAttribute('aria-selected', String(name === 'print'));
-  if (name === 'print') renderSheets();
+  if (name === 'print') setPrintKind(printKind);
 }
 $('#tabRoute').addEventListener('click', () => showTab('route'));
 $('#tabPrint').addEventListener('click', () => showTab('print'));
 
-$('#shot').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) readShot(f); });
+const images = (list) => [...(list || [])].filter((x) => x.type.startsWith('image/'));
+$('#shot').addEventListener('change', (e) => { const f = images(e.target.files); e.target.value = ''; if (f.length) addShots(f); });
 document.addEventListener('paste', (e) => {
-  const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/'));
-  if (f) { e.preventDefault(); showTab('route'); readShot(f); }
+  const f = images(e.clipboardData?.files);
+  if (f.length) { e.preventDefault(); showTab('route'); addShots(f); }
 });
 document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', (e) => {
-  const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'));
-  if (f) { e.preventDefault(); showTab('route'); readShot(f); }
+  const f = images(e.dataTransfer?.files);
+  if (f.length) { e.preventDefault(); showTab('route'); addShots(f); }
 });
 let parseTimer;
-$('#srcText').addEventListener('input', () => { clearTimeout(parseTimer); parseTimer = setTimeout(renderRoute, 300); });
+$('#srcText').addEventListener('input', () => {
+  store.set('src', $('#srcText').value);
+  clearTimeout(parseTimer);
+  parseTimer = setTimeout(renderRoute, 300);
+});
+$('#btnClearAll').addEventListener('click', () => {
+  if ($('#srcText').value.trim() && !confirm('Очистить все добавленные скриншоты и маршрут?')) return;
+  $('#srcText').value = '';
+  store.set('src', '');
+  renderRoute();
+  status('Очищено. Добавьте скриншот.');
+});
+$('#btnNames').addEventListener('click', lookupNames);
+$('#btnToList').addEventListener('click', () => { printKind = 'list'; showTab('print'); });
+$('#pkLabels').addEventListener('click', () => setPrintKind('labels'));
+$('#pkList').addEventListener('click', () => setPrintKind('list'));
+$('#lBarcode').addEventListener('change', renderPickList);
+$('#lOnlyKnown').addEventListener('change', renderPickList);
+$('#btnPrintList').addEventListener('click', () => { renderPickList(); printWithMargin(10); });
+$('#btnListBack').addEventListener('click', () => showTab('route'));
+$('#nameSvc').addEventListener('change', () => store.set('nameSvc', $('#nameSvc').value.trim()));
 $('#btnParse').addEventListener('click', renderRoute);
 $('#here').addEventListener('change', () => { store.set('here', $('#here').value.trim()); renderRoute(); });
 $('#btnHereClear').addEventListener('click', () => { $('#here').value = ''; store.set('here', ''); renderRoute(); });
@@ -755,9 +987,9 @@ $('#btnOverridesReset').addEventListener('click', () => {
 $('#types').addEventListener('change', renderRoute);
 $('#btnToPrint').addEventListener('click', () => addToPrint(lastRoute.map((r) => r.code)));
 $('#btnCsv').addEventListener('click', () => {
-  const head = ['point', 'location', 'zone', 'type', 'sector', 'row', 'section', 'level', 'place', 'articleId', 'qty', 'status', 'line'];
+  const head = ['point', 'location', 'zone', 'type', 'sector', 'row', 'section', 'level', 'place', 'articleId', 'name', 'qty', 'status', 'line'];
   const n = lastRoute.filter((r) => r.status !== 'bad').length;
-  const rows = lastRoute.map((it, i) => { const d = describe(it.code); return [i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'B' : i + 1, it.code, d.z, d.type, d.a, d.r, d.k, d.l, d.m, effArticle(it), effQty(it) ?? '', it.status, it.line]; });
+  const rows = lastRoute.map((it, i) => { const d = describe(it.code); return [i >= n ? '?' : i === 0 ? 'A' : i === n - 1 ? 'B' : i + 1, it.code, d.z, d.type, d.a, d.r, d.k, d.l, d.m, effArticle(it), effName(it), effQty(it) ?? '', it.status, it.line]; });
   const csv = '﻿' + [head, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
   const a = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'trasa-m13.csv' });
   document.body.append(a); a.click(); a.remove();
@@ -801,7 +1033,7 @@ $('#btnAddFilter').addEventListener('click', () => {
   if (list.length) addToPrint(list);
 });
 $('#btnClear').addEventListener('click', () => { $('#pCodes').value = ''; renderSheets(); });
-$('#btnPrint').addEventListener('click', () => { renderSheets(); window.print(); });
+$('#btnPrint').addEventListener('click', () => { renderSheets(); printWithMargin(0); });
 window.addEventListener('resize', () => { if (!$('#printTab').classList.contains('hidden')) renderSheets(); });
 
 /* ═════════ Start ═════════ */
@@ -812,17 +1044,32 @@ $('#here').value = store.get('here', '');
 for (const id of ['#pMode', '#pPerPage', '#pCols', '#pRows', '#pW', '#pH', '#pMargin', '#pGap', '#pCopies', '#pSkip']) { const v = store.get('p' + id, null); if (v !== null) $(id).value = v; }
 for (const id of ['#pText', '#pCaption', '#pCut']) { const v = store.get('p' + id, null); if (v !== null) $(id).checked = v; }
 $('#pCodes').value = store.get('codes', '');
+$('#srcText').value = store.get('src', '');
+$('#nameSvc').value = store.get('nameSvc', '');
+$('#lBarcode').checked = store.get('lBarcode', true);
+$('#lOnlyKnown').checked = store.get('lOnlyKnown', true);
+if ($('#srcText').value.trim()) renderRoute();
 // From the scanner tool: locations.html#print=224800 → one code, a full sheet.
 const hash = new URLSearchParams(location.hash.slice(1));
 if (hash.get('print')) {
   $('#pOne').value = hash.get('print');
+  printKind = 'labels';
   showTab('print');
   $('#btnFill').click();
+} else if (hash.get('tab') === 'list' || hash.get('tab') === 'labels') { // links from the start page
+  printKind = hash.get('tab');
+  showTab('print');
 } else {
   showTab('route');
 }
 
-window.M13L = { parseText, buildRoute, isKnownLoc, allLocs, computeLayout, modules, correct, itemTier, SECTOR_ORDER, overrides };
+// Same-page links (#tab=list / #tab=labels) switch the print mode without a reload.
+window.addEventListener('hashchange', () => {
+  const t = new URLSearchParams(location.hash.slice(1)).get('tab');
+  if (t === 'list' || t === 'labels') { printKind = t; showTab('print'); }
+});
+
+window.M13L = { parseText, buildRoute, isKnownLoc, allLocs, computeLayout, modules, correct, itemTier, SECTOR_ORDER, overrides, names, renderPickList };
 </script>
 </body>
 </html>

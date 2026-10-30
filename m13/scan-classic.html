@@ -1,0 +1,594 @@
+<!doctype html>
+<!--
+  M13 · Быстрый ArticleId → Code-128 (прежняя версия)
+  ──────────────────────────────────────────────────
+  Версия до автопоиска номера на этикетке: без поля ArticleId берётся ArticleNr, затем EAN-13.
+  1. Нажмите «СКАНИРОВАТЬ» и держите камеру над этикеткой 2–3 секунды (штрих-коды и текст в кадре).
+  2. Первый считанный код сразу появляется сверху. Параллельно OCR ищет на этикетке «ArticleId»;
+     как только находит, код заменяется на ArticleId и камера выключается сама.
+     Порядок: ArticleId → ArticleNr → EAN-13 → любой другой код.
+  3. Большой Code-128 готов. Кнопки:
+     «НА ВЕСЬ ЭКРАН»: показать сканеру; «AUTODOC»: проверить номер на autodoc.pl;
+     «ДРУГОЙ КОД»: выбрать другой найденный код или ввести вручную; «СЛЕДУЮЩИЙ»: новый товар.
+     «A4 ×32»: лист этикеток с этим кодом (файл locations.html рядом).
+  «ФОТО»: если камера не запускается (нужен https) или текст мелкий, сфотографируйте этикетку.
+  При первом открытии нужен интернет (библиотеки + OCR-модель ~5 МБ, дальше из кэша).
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>M13 · Сканер (прежняя версия)</title>
+<style>
+  :root { --bg:#000; --panel:#111; --line:#2b2b2b; --text:#fff; --muted:#a3a3a3; --accent:#ffd400; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 640px; margin: 0 auto; padding: 10px 12px 32px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .hidden { display: none !important; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1 1 0; min-width: 0; }
+  button, .btn { appearance: none; border: 2px solid var(--line); background: #1c1c1c; color: var(--text); border-radius: 16px;
+    min-height: 64px; padding: 8px 12px; font: 800 19px/1.1 system-ui, sans-serif; letter-spacing: .02em; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-align: center; touch-action: manipulation; user-select: none; }
+  button:active, .btn:active { transform: scale(.98); }
+  button:disabled { opacity: .35; }
+  .primary { background: var(--accent); border-color: var(--accent); color: #000; }
+  .big { min-height: 84px; font-size: 24px; }
+  .sm { min-height: 48px; font-size: 16px; }
+  input { width: 100%; background: #000; color: var(--text); border: 2px solid #3a3a3a; border-radius: 14px; padding: 12px 14px;
+    font: 700 22px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+  input:focus { border-color: var(--accent); }
+
+  #reader { width: 100%; border-radius: 16px; overflow: hidden; background: #050505; margin-top: 10px; }
+  #reader video { width: 100% !important; height: auto !important; display: block; object-fit: cover; }
+  #scanInfo { margin-top: 8px; font-size: 16px; color: var(--muted); min-height: 22px; }
+
+  #card { background: var(--panel); border: 3px solid var(--line); border-radius: 18px; padding: 12px; margin-top: 10px; }
+  #card.k-articleid { border-color: var(--ok); }
+  #card.k-articlenr { border-color: #3b82f6; }
+  #card.k-ean, #card.k-other { border-color: var(--warn); }
+  #card.k-manual { border-color: #a855f7; }
+  .badge { display: inline-block; padding: 5px 12px; border-radius: 999px; font-size: 14px; font-weight: 900; letter-spacing: .04em; }
+  .b-articleid { background: #052e16; color: #86efac; } .b-articlenr { background: #0b1f4d; color: #93c5fd; }
+  .b-ean, .b-other { background: #3a2503; color: #fcd34d; } .b-manual { background: #2e1065; color: #d8b4fe; } .b-none { background: #222; color: #ccc; }
+  #code { font: 900 44px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; margin: 8px 0 2px; word-break: break-all; }
+  #why { color: #d4d4d4; font-size: 15px; }
+  #pending { color: var(--accent); font-size: 15px; margin-top: 4px; }
+  #bcBox { background: #fff; border-radius: 14px; padding: 10px 6px; margin-top: 10px; }
+  #bcBox svg { width: 100%; height: auto; max-height: 240px; display: block; }
+
+  #other { background: var(--panel); border: 2px solid var(--line); border-radius: 18px; padding: 12px; margin-top: 10px; }
+  .cand { width: 100%; justify-content: space-between; text-align: left; margin-bottom: 8px; }
+  .cand b { font: 900 22px ui-monospace, Menlo, monospace; word-break: break-all; }
+  .cand small { display: block; color: var(--muted); font-weight: 600; font-size: 13px; margin-top: 2px; }
+  .cand.sel { border-color: var(--accent); background: #1f1a00; }
+  details summary { color: var(--muted); font-size: 14px; padding: 8px 0; cursor: pointer; }
+  details pre { white-space: pre-wrap; word-break: break-all; font-size: 13px; color: #d4d4d4; margin: 0; }
+
+  #full { position: fixed; inset: 0; z-index: 50; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; }
+  #full svg { width: 100%; height: auto; max-height: 82vh; }
+  #full p { color: #000; font: 600 16px system-ui; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <button id="btnScan" class="primary big" type="button">📷 СКАНИРОВАТЬ</button>
+    <label class="btn" for="photo" style="flex:0 0 30%">🖼 ФОТО<input id="photo" type="file" accept="image/*" class="hidden"></label>
+  </div>
+  <div id="camBox" class="hidden">
+    <div id="reader"></div>
+    <button id="btnStop" class="sm" type="button" style="width:100%;margin-top:8px">■ СТОП</button>
+  </div>
+  <div id="scanInfo">Нажмите «СКАНИРОВАТЬ» и наведите камеру на этикетку.</div>
+
+  <section id="card" class="hidden">
+    <span id="badge" class="badge b-none">—</span>
+    <div id="code">—</div>
+    <div id="why"></div>
+    <div id="pending" class="hidden">⏳ ищу ArticleId в тексте этикетки…</div>
+    <div id="bcBox"><svg id="bc"></svg></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnFull" class="primary" type="button">⛶ НА ВЕСЬ ЭКРАН</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnAutodoc" type="button">🔎 AUTODOC</button>
+      <button id="btnOther" type="button">✎ ДРУГОЙ КОД</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnA4" type="button">🖨 A4 ×32</button>
+      <button id="btnLoc" type="button">🗺 ЛОКАЦИИ</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnNext" class="primary" type="button">▶ СЛЕДУЮЩИЙ</button>
+    </div>
+  </section>
+
+  <section id="other" class="hidden">
+    <div id="cands"></div>
+    <form id="manualForm" class="row" autocomplete="off">
+      <input id="manual" placeholder="Ввести код" autocapitalize="characters" spellcheck="false" style="flex:3 1 0">
+      <button class="sm" type="submit" style="flex:1 1 0">ОК</button>
+    </form>
+  </section>
+
+  <details id="rawBox" class="hidden"><summary>Что найдено (сырые данные)</summary><pre id="raw"></pre></details>
+</main>
+
+<div id="full" class="hidden" role="dialog"><svg id="fullBc"></svg><p>Нажмите, чтобы закрыть</p></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+'use strict';
+const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js';
+const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const AUTODOC_SEARCH = 'https://www.autodoc.pl/search?keyword=';
+const WAIT_FOR_ARTICLE_ID_MS = 6000; // after the first hit, keep reading text this long
+const MAX_SCAN_AFTER_HIT_MS = 15000; // hard stop even if OCR is slow
+
+/* ═════════ Rules ═════════ */
+
+function gtinValid(s) {
+  if (!/^\d+$/.test(s) || ![8, 12, 13, 14].includes(s.length)) return false;
+  let sum = 0;
+  for (let i = s.length - 2, w = 3; i >= 0; i--, w = 4 - w) sum += +s[i] * w;
+  return (10 - (sum % 10)) % 10 === +s[s.length - 1];
+}
+
+// OCR digit look-alikes, applied only inside an ArticleId value.
+const DIGIT_FIX = { O: '0', o: '0', D: '0', Q: '0', I: '1', l: '1', i: '1', '|': '1', L: '1', S: '5', s: '5', B: '8', Z: '2', z: '2', G: '6' };
+const fixDigits = (s) => s.replace(/[OoDQIli|LSsBZzG]/g, (c) => DIGIT_FIX[c]);
+// Same-length "loose" copy of the text so labels survive OCR noise: Artic1eId, Articleld, ArticleID…
+const loose = (t) => [...t].map((ch) => { const c = ch.toLowerCase()[0] || ch; return /[1|!íıi]/.test(c) ? 'l' : c; }).join('');
+
+const SEP = '[\\s:;.#=\\-–—|]{0,8}';
+const ID_LABEL = /(?<![a-z])(?:artlcle\s*[-_.]?\s*ld|art\.?\s*[-_]?\s*ld)(?![a-z])/g;
+const NR_LABEL = /(?<![a-z])(?:artlcle\s*[-_.]?\s*(?:nr|no|number|nummer)|art\.?\s*-?\s*nr)\.?(?![a-z])/g;
+const ID_VALUE = new RegExp('^' + SEP + '([0-9OoIl|SBZ]{4,10})(?![0-9A-Za-z])');
+const NR_VALUE = new RegExp('^' + SEP + '([A-Za-z0-9][A-Za-z0-9\\-./]*(?: (?=\\S*\\d)[A-Za-z0-9\\-./]+)*)');
+
+function parseFields(text) {
+  const src = String(text || '');
+  const lz = loose(src);
+  const ids = new Map(), nrs = new Map();
+  let m;
+  ID_LABEL.lastIndex = 0;
+  while ((m = ID_LABEL.exec(lz))) {
+    const v = src.slice(m.index + m[0].length, m.index + m[0].length + 40).match(ID_VALUE);
+    if (!v) continue;
+    const fixed = fixDigits(v[1]);
+    if ((v[1].match(/\d/g) || []).length >= 3 && /^\d{4,10}$/.test(fixed)) ids.set(fixed, (ids.get(fixed) || 0) + 1);
+  }
+  NR_LABEL.lastIndex = 0;
+  while ((m = NR_LABEL.exec(lz))) {
+    const v = src.slice(m.index + m[0].length, m.index + m[0].length + 60).match(NR_VALUE);
+    if (!v) continue;
+    // "0 986 494 294" is printed with spaces for reading; the code itself has none.
+    const val = v[1].replace(/[.\-/]+$/, '').replace(/\s+/g, '').toUpperCase();
+    if (/\d/.test(val) && val.length >= 2 && val.length <= 30) nrs.set(val, (nrs.get(val) || 0) + 1);
+  }
+  const sorted = (map) => [...map].sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
+  return { articleIds: sorted(ids), articleNrs: sorted(nrs) };
+}
+
+const normCmp = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+const FMT = { CODE_128: 'Code-128', EAN_13: 'EAN-13', EAN_8: 'EAN-8', UPC_A: 'UPC-A', UPC_E: 'UPC-E', CODE_39: 'Code-39', ITF: 'ITF', QR_CODE: 'QR', DATA_MATRIX: 'DataMatrix' };
+
+/**
+ * ArticleId → ArticleNr → EAN-13 → any other code.
+ * @returns {{code, kind, why, candidates}}
+ */
+function pick(codes, text) {
+  const f = parseFields([text, ...codes.map((c) => c.value)].join('\n'));
+  const isEan13 = (v) => v.length === 13 && gtinValid(v);
+  const candidates = [];
+  const add = (value, label) => { if (value && !candidates.some((c) => c.value === value)) candidates.push({ value, label }); };
+  f.articleIds.forEach((x) => add(x.value, 'ArticleId (текст)'));
+  f.articleNrs.forEach((x) => add(x.value, 'ArticleNr (текст)'));
+  for (const c of codes) {
+    if (/^\d{14,}$/.test(c.value) && !gtinValid(c.value)) add(c.value.slice(0, 6), `первые 6 цифр длинного кода ${c.value}`);
+    add(c.value, (isEan13(c.value) ? 'EAN-13' : FMT[c.format] || c.format) + ' (штрих-код)');
+  }
+  const res = (code, kind, why) => ({ code, kind, why, candidates, fields: f });
+
+  if (f.articleIds.length) {
+    const id = f.articleIds[0].value;
+    return res(id, 'articleid', `Поле ArticleId на этикетке${f.articleIds.length > 1 ? ` (есть и другие: ${f.articleIds.slice(1).map((x) => x.value).join(', ')})` : ''}.`);
+  }
+  if (f.articleNrs.length) {
+    const nr = f.articleNrs[0].value;
+    // Prefer the exact barcode value when it matches what OCR read (fixes O/0, l/1 mistakes).
+    const best = codes.map((c) => ({ c, d: editDistance(normCmp(c.value), normCmp(nr)) })).sort((a, b) => a.d - b.d)[0];
+    if (best && best.d <= Math.min(2, Math.floor(nr.length / 4))) {
+      return res(best.c.value, 'articlenr', `Поле ArticleNr, подтверждено штрих-кодом ${FMT[best.c.format] || ''}.`);
+    }
+    return res(nr, 'articlenr', 'Поле ArticleNr на этикетке (ArticleId не найден).');
+  }
+  const ean = codes.find((c) => isEan13(c.value));
+  if (ean) return res(ean.value, 'ean', 'ArticleId и ArticleNr не найдены, взят EAN-13.');
+  if (codes.length) return res(codes[0].value, 'other', `ArticleId/ArticleNr/EAN не найдены, взят ${FMT[codes[0].format] || 'штрих-код'}.`);
+  return res('', 'none', '');
+}
+
+/* ═════════ State & UI ═════════ */
+
+const $ = (s) => document.querySelector(s);
+const st = { codes: [], text: '', override: null, result: null, scanning: false, firstHitAt: 0, ocrPasses: 0, ocrDead: false };
+const BADGES = { articleid: 'ArticleId', articlenr: 'ArticleNr', ean: 'EAN-13', other: 'ШТРИХ-КОД', manual: 'ВРУЧНУЮ', none: '—' };
+const info = (t) => { $('#scanInfo').textContent = t; };
+
+let audio;
+function beep(kind = 'ok') {
+  try {
+    audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = kind === 'win' ? 1800 : kind === 'ok' ? 1300 : 320;
+    g.gain.value = 0.1;
+    o.connect(g).connect(audio.destination);
+    o.start();
+    o.stop(audio.currentTime + (kind === 'win' ? 0.15 : 0.07));
+  } catch { /* no audio */ }
+  navigator.vibrate?.(kind === 'win' ? [60, 40, 60] : 50);
+}
+
+function addCode(value, format, source) {
+  const v = String(value || '').trim();
+  if (!v || st.codes.some((c) => c.value === v)) return false;
+  st.codes.push({ value: v, format, source });
+  return true;
+}
+
+const current = () => (st.override ? st.override.code : st.result?.code) || '';
+
+function render() {
+  const prevKind = st.result?.kind;
+  st.result = pick(st.codes, st.text);
+  const r = st.result;
+  const kind = st.override ? 'manual' : r.kind;
+  const code = current();
+  if (!code) { $('#card').classList.add('hidden'); return; }
+  $('#card').classList.remove('hidden');
+  $('#card').className = `k-${kind}`;
+  $('#badge').className = `badge b-${kind}`;
+  $('#badge').textContent = BADGES[kind];
+  $('#code').textContent = code;
+  $('#why').textContent = st.override ? `Выбрано вручную${st.override.label ? ': ' + st.override.label : ''}. Автовыбор: ${r.code || '—'}.` : r.why;
+  $('#pending').classList.toggle('hidden', !(st.scanning && kind !== 'articleid' && !st.ocrDead));
+  drawCode($('#bc'), code, 3, 140, 30);
+  if (prevKind && prevKind !== r.kind && r.kind === 'articleid' && !st.override) beep('win');
+
+  $('#cands').replaceChildren(...r.candidates.map((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cand' + (c.value === code ? ' sel' : '');
+    b.innerHTML = '<span><b></b><small></small></span><span>' + (c.value === code ? '✓' : '›') + '</span>';
+    b.querySelector('b').textContent = c.value;
+    b.querySelector('small').textContent = c.label;
+    b.onclick = () => { st.override = { code: c.value, label: c.label }; $('#other').classList.add('hidden'); render(); };
+    return b;
+  }));
+  $('#rawBox').classList.remove('hidden');
+  $('#raw').textContent = 'Штрих-коды:\n' + (st.codes.map((c) => `  ${c.value}  [${FMT[c.format] || c.format}, ${c.source}]`).join('\n') || '  —') +
+    '\n\nТекст (OCR):\n' + (st.text.trim() || '  —');
+}
+
+function drawCode(svg, code, width, height, fontSize) {
+  if (!/^[\x20-\x7e]+$/.test(code)) { svg.replaceChildren(); return; }
+  JsBarcode(svg, code, { format: 'CODE128', width, height, fontSize, margin: 14, font: 'monospace', fontOptions: 'bold', background: '#fff', lineColor: '#000' });
+  svg.setAttribute('viewBox', `0 0 ${parseFloat(svg.getAttribute('width'))} ${parseFloat(svg.getAttribute('height'))}`);
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+}
+
+/* ═════════ OCR (Tesseract in a Web Worker, so the camera never stutters) ═════════ */
+
+const scripts = {};
+function loadScript(url, name) {
+  if (window[name]) return Promise.resolve(window[name]);
+  return (scripts[url] ??= new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = () => ok(window[name]);
+    s.onerror = () => { delete scripts[url]; fail(new Error(`${name} не загрузился`)); };
+    document.head.append(s);
+  }));
+}
+
+let ocr = null;
+function getOcr() {
+  return (ocr ??= loadScript(TESSERACT_URL, 'Tesseract')
+    .then((T) => T.createWorker('eng', 1))
+    .then(async (w) => {
+      await w.setParameters({ tessedit_pageseg_mode: '11' }); // sparse text: labels
+      return w;
+    })
+    .catch((e) => { ocr = null; st.ocrDead = true; throw e; }));
+}
+
+/** Grayscale + contrast stretch, long side ≤ maxSide. */
+function prep(src, maxSide) {
+  const long = Math.max(src.width, src.height);
+  const k = long < 900 ? 1.6 : Math.min(1, maxSide / long);
+  const c = document.createElement('canvas');
+  c.width = Math.round(src.width * k);
+  c.height = Math.round(src.height * k);
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(src, 0, 0, c.width, c.height);
+  const img = x.getImageData(0, 0, c.width, c.height), d = img.data;
+  let lo = 255, hi = 0;
+  for (let i = 0; i < d.length; i += 4) { const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = g; if (g < lo) lo = g; if (g > hi) hi = g; }
+  const r = Math.max(hi - lo, 1);
+  for (let i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = ((d[i] - lo) * 255) / r;
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
+async function ocrImage(canvas, maxSide) {
+  const w = await getOcr();
+  const { data } = await w.recognize(prep(canvas, maxSide));
+  const t = data.text.replace(/\n{2,}/g, '\n').trim();
+  // Keep only new lines so repeated frames do not bloat the text.
+  const known = new Set(st.text.split('\n'));
+  const fresh = t.split('\n').filter((l) => l.trim() && !known.has(l));
+  if (fresh.length) st.text += (st.text ? '\n' : '') + fresh.join('\n');
+}
+
+/* ═════════ Live scan: barcodes every frame + OCR loop on video frames ═════════ */
+
+let qr = null, loopTimer = null, ocrBusy = false, zx = null, zxTurn = 0;
+
+// html5-qrcode's built-in ZXing (used when the phone has no native BarcodeDetector,
+// e.g. iPhone) reads only rows near the middle of its box. A second ZXing with
+// TRY_HARDER over the whole frame, then halves and a 90° turn, catches codes anywhere.
+const ZX_REGIONS = [
+  [{ x: 0, y: 0, w: 1, h: 1 }, false],
+  [{ x: 0, y: 0, w: 1, h: 0.55 }, false],
+  [{ x: 0, y: 0.45, w: 1, h: 0.55 }, false],
+  [{ x: 0, y: 0, w: 1, h: 1 }, true],
+];
+async function getZx() {
+  if (zx) return zx;
+  const Z = await loadScript(ZXING_URL, 'ZXing');
+  const F = Z.BarcodeFormat;
+  const hints = new Map([[Z.DecodeHintType.TRY_HARDER, true],
+    [Z.DecodeHintType.POSSIBLE_FORMATS, [F.CODE_128, F.EAN_13, F.EAN_8, F.UPC_A, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX]]]);
+  const reader = new Z.MultiFormatReader();
+  zx = (canvas) => {
+    try {
+      const r = reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(canvas))), hints);
+      return [r.getText(), F[r.getBarcodeFormat()]];
+    } catch { return null; }
+  };
+  return zx;
+}
+function onCode(text, format, source) {
+  if (addCode(text, format, source)) {
+    st.firstHitAt ||= Date.now();
+    beep();
+    render();
+  }
+}
+
+async function startScan() {
+  if (!window.Html5Qrcode) return info('Сканер не загрузился (нет интернета?). Используйте ФОТО.');
+  if (!window.isSecureContext) return info('Камера работает только по https://. Используйте ФОТО.');
+  reset();
+  getOcr().catch(() => {}); // warm up in parallel with the camera
+  getZx().catch(() => {});
+  const F = Html5QrcodeSupportedFormats;
+  qr ??= new Html5Qrcode('reader', {
+    verbose: false,
+    formatsToSupport: [F.CODE_128, F.EAN_13, F.EAN_8, F.UPC_A, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX],
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+  });
+  $('#camBox').classList.remove('hidden');
+  $('#btnScan').disabled = true;
+  try {
+    await qr.start({ facingMode: 'environment' }, {
+      fps: 15,
+      qrbox: (w, h) => ({ width: Math.floor(w * 0.94), height: Math.floor(Math.min(h * 0.8, w * 0.7)) }),
+      videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    }, (text, result) => onCode(text, result?.result?.format?.formatName || '?', 'камера'), () => {});
+  } catch (e) {
+    stopScan();
+    return info(/NotAllowed|Permission/i.test(String(e)) ? 'Нет доступа к камере: разрешите в настройках браузера.' : `Камера: ${e}`);
+  }
+  st.scanning = true;
+  info('Держите камеру над этикеткой: ищу штрих-коды и ArticleId…');
+  loopTimer = setInterval(tick, 250);
+}
+
+function grabFrame() {
+  const v = $('#reader video');
+  if (!v || !v.videoWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth;
+  c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  return c;
+}
+
+function tick() {
+  if (!st.scanning) return;
+  const r = st.result || pick(st.codes, st.text);
+  if (r.kind === 'articleid') return finish(`Готово: ArticleId ${r.code}.`);
+  const since = st.firstHitAt ? Date.now() - st.firstHitAt : 0;
+  if (st.firstHitAt && (st.ocrDead || (since > WAIT_FOR_ARTICLE_ID_MS && st.ocrPasses >= 2) || since > MAX_SCAN_AFTER_HIT_MS)) {
+    return finish(r.code ? `ArticleId не найден, взят ${BADGES[r.kind]}. Проверьте или выберите другой код.` : 'Ничего не найдено.');
+  }
+  const frame = grabFrame();
+  if (!frame) return;
+  if (zx) {
+    const [region, rot] = ZX_REGIONS[zxTurn++ % ZX_REGIONS.length];
+    const hit = zx(crop(frame, region, rot, 1280));
+    if (hit) onCode(hit[0], hit[1], 'камера');
+  }
+  if (!ocrBusy && !st.ocrDead) {
+    ocrBusy = true;
+    ocrImage(frame, 1600)
+      .then(() => {
+        st.ocrPasses++;
+        const before = st.firstHitAt;
+        const f = parseFields(st.text);
+        if (!before && (f.articleIds.length || f.articleNrs.length)) st.firstHitAt = Date.now();
+        if (st.scanning) info(`Читаю текст этикетки… (проход ${st.ocrPasses})`);
+        render();
+      })
+      .catch(() => { st.ocrDead = true; info('OCR недоступен: результат только по штрих-кодам.'); render(); })
+      .finally(() => { ocrBusy = false; });
+  }
+}
+
+async function stopScan() {
+  st.scanning = false;
+  clearInterval(loopTimer);
+  try { if (qr?.isScanning) await qr.stop(); } catch { /* already stopped */ }
+  $('#camBox').classList.add('hidden');
+  $('#btnScan').disabled = false;
+}
+
+function finish(message) {
+  stopScan();
+  info(message);
+  render();
+  if (current()) beep(st.result.kind === 'articleid' ? 'win' : 'ok');
+  $('#card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function reset() {
+  Object.assign(st, { codes: [], text: '', override: null, result: null, firstHitAt: 0, ocrPasses: 0, ocrDead: false });
+  $('#other').classList.add('hidden');
+  $('#rawBox').classList.add('hidden');
+  render();
+}
+
+/* ═════════ Photo: all barcodes (ZXing tiles) + full-resolution OCR ═════════ */
+
+function crop(src, r, rot, maxSide) {
+  const sx = src.width * r.x, sy = src.height * r.y, sw = src.width * r.w, sh = src.height * r.h;
+  const k = Math.min(1, maxSide / Math.max(sw, sh)), w = Math.round(sw * k), h = Math.round(sh * k);
+  const c = document.createElement('canvas');
+  c.width = rot ? h : w;
+  c.height = rot ? w : h;
+  const x = c.getContext('2d');
+  if (rot) { x.translate(c.width / 2, c.height / 2); x.rotate(Math.PI / 2); x.drawImage(src, sx, sy, sw, sh, -w / 2, -h / 2, w, h); }
+  else x.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  return c;
+}
+
+async function barcodesInPhoto(src) {
+  const out = [];
+  if ('BarcodeDetector' in window) {
+    try { for (const b of await new BarcodeDetector().detect(src)) out.push([b.rawValue, String(b.format).toUpperCase()]); } catch { /* ignore */ }
+  }
+  const Z = await loadScript(ZXING_URL, 'ZXing');
+  const F = Z.BarcodeFormat;
+  const hints = new Map([[Z.DecodeHintType.TRY_HARDER, true],
+    [Z.DecodeHintType.POSSIBLE_FORMATS, [F.CODE_128, F.EAN_13, F.EAN_8, F.UPC_A, F.CODE_39, F.ITF, F.QR_CODE, F.DATA_MATRIX]]]);
+  const reader = new Z.MultiFormatReader();
+  const grid = (n, s) => Array.from({ length: n * n }, (_, i) => ({ x: (i % n) * (n > 1 ? (1 - s) / (n - 1) : 0), y: Math.floor(i / n) * (n > 1 ? (1 - s) / (n - 1) : 0), w: s, h: s }));
+  const regions = [{ x: 0, y: 0, w: 1, h: 1 }, ...grid(2, 0.6), ...grid(3, 0.45)];
+  const t0 = performance.now();
+  for (const r of regions) for (const rot of [false, true]) {
+    if (performance.now() - t0 > 4000) break;
+    await new Promise((ok) => setTimeout(ok));
+    try {
+      const res = reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(crop(src, r, rot, 1400)))), hints);
+      out.push([res.getText(), F[res.getBarcodeFormat()]]);
+    } catch { /* nothing in this tile */ }
+  }
+  return out;
+}
+
+let photoBusy = false;
+$('#photo').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (photoBusy) return info('Подождите, предыдущее фото ещё обрабатывается…');
+  photoBusy = true;
+  await stopScan();
+  reset();
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const src = document.createElement('canvas');
+    src.width = bmp.width;
+    src.height = bmp.height;
+    src.getContext('2d').drawImage(bmp, 0, 0);
+    st.scanning = true; // shows "ищу ArticleId…" while OCR runs
+    const ocrRun = ocrImage(src, 2000).catch(() => { st.ocrDead = true; });
+    info('Ищу штрих-коды на фото…');
+    for (const [v, f] of await barcodesInPhoto(src)) addCode(v, f, 'фото');
+    if (st.codes.length) beep();
+    render();
+    info('Читаю текст этикетки…');
+    await ocrRun;
+    finish(st.result.kind === 'articleid' ? `Готово: ArticleId ${st.result.code}.` : current() ? `ArticleId не найден, взят ${BADGES[st.result.kind]}.` : 'Ничего не найдено. Снимите ближе и ровнее.');
+  } catch (err) {
+    st.scanning = false;
+    info(`Не удалось обработать фото: ${err.message || err}`);
+  } finally {
+    photoBusy = false;
+  }
+});
+
+/* ═════════ Buttons ═════════ */
+
+$('#btnScan').addEventListener('click', startScan);
+$('#btnStop').addEventListener('click', () => finish(current() ? 'Остановлено.' : 'Остановлено, ничего не найдено.'));
+$('#btnNext').addEventListener('click', startScan);
+$('#btnAutodoc').addEventListener('click', () => {
+  const code = current();
+  if (code) window.open(AUTODOC_SEARCH + encodeURIComponent(code), '_blank', 'noopener');
+});
+// Printing: A4 sheet of labels in the companion tool (same folder).
+$('#btnA4').addEventListener('click', () => { const code = current(); if (code) window.open(`locations.html#print=${encodeURIComponent(code)}`, '_blank'); });
+$('#btnLoc').addEventListener('click', () => window.open('locations.html', '_blank'));
+$('#btnOther').addEventListener('click', () => {
+  $('#other').classList.toggle('hidden');
+  if (!$('#other').classList.contains('hidden')) $('#other').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('#manualForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('#manual').value.trim();
+  if (!v) return;
+  if (!/^[\x20-\x7e]+$/.test(v)) return info('Code-128: только латиница, цифры и символы ASCII.');
+  st.override = { code: v, label: 'ввод' };
+  $('#manual').value = '';
+  $('#other').classList.add('hidden');
+  render();
+});
+
+let wake = null;
+$('#btnFull').addEventListener('click', async () => {
+  const code = current();
+  if (!code) return;
+  drawCode($('#fullBc'), code, 4, 220, 40);
+  $('#full').classList.remove('hidden');
+  try { await document.documentElement.requestFullscreen?.(); } catch { /* not allowed */ }
+  try { await screen.orientation?.lock?.('landscape'); } catch { /* not supported */ }
+  try { wake = await navigator.wakeLock?.request('screen'); } catch { /* not supported */ }
+});
+$('#full').addEventListener('click', async () => {
+  $('#full').classList.add('hidden');
+  try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+  try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* ignore */ }
+  try { await wake?.release(); } catch { /* ignore */ }
+});
+
+window.M13 = { pick, parseFields };
+</script>
+</body>
+</html>
